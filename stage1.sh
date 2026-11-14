@@ -35,13 +35,14 @@ mkdir -pv /usr/{,local/}share/{misc,terminfo,zoneinfo}
 mkdir -pv /usr/{,local/}share/man/man{1..8}
 mkdir -pv /var/{cache,local,log,mail,opt,spool}
 mkdir -pv /var/lib/{color,misc,locate}
-ln -sfv /run /var/run
-ln -sfv /run/lock /var/lock
+# -n so re-runs replace the symlink itself instead of following it.
+ln -sfnv /run /var/run
+ln -sfnv /run/lock /var/lock
 install -dv -m 0750 /root
 install -dv -m 1777 /tmp /var/tmp
 
 log "7.6 essential files"
-ln -sv /proc/self/mounts /etc/mtab
+ln -sfv /proc/self/mounts /etc/mtab
 cat > /etc/hosts <<'EOF'
 127.0.0.1 localhost
 ::1 localhost
@@ -159,6 +160,7 @@ sha256sum -c <<'GOSUM'
 7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840  /sources/go1.27.4.linux-amd64.tar.gz
 GOSUM
 tar -xf /sources/go1.27.4.linux-amd64.tar.gz -C /opt
+rm -rf /opt/go-bootstrap
 mv /opt/go /opt/go-bootstrap
 
 log "7.15 cleaning up the temporary system"
