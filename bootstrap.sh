@@ -90,7 +90,7 @@ preflight() {
 	done
 	[ -d "$ZIGNOS_RECIPES/core" ] || die "recipe tree not found: $ZIGNOS_RECIPES"
 	[ -f "$ZIGNOS_ZPKG_SRC/go.mod" ] || die "zpkg source not found: $ZIGNOS_ZPKG_SRC"
-	[ -e /etc/bash.bashrc ] && mv -v /etc/bash.bashrc /etc/bash.bashrc.NOUSE
+	if [ -e /etc/bash.bashrc ]; then mv -v /etc/bash.bashrc /etc/bash.bashrc.NOUSE; fi
 	umask 022
 	export LFS LFS_TGT JOBS
 }
