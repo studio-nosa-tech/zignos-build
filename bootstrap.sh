@@ -85,7 +85,7 @@ preflight() {
 	log "preflight"
 	[ "$(id -u)" = 0 ] || die "run as root"
 	mountpoint -q "$LFS" || die "$LFS is not a mountpoint (format+mount a clean partition first)"
-	for c in gcc g++ make gawk texinfo bison perl python3 curl wget tar gzip xz bzip2 file patch diff go; do
+	for c in gcc g++ make gawk makeinfo bison perl python3 curl wget tar gzip xz bzip2 file patch diff go; do
 		command -v "$c" >/dev/null 2>&1 || die "missing host tool: $c"
 	done
 	[ -d "$ZIGNOS_RECIPES/core" ] || die "recipe tree not found: $ZIGNOS_RECIPES"
