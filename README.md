@@ -4,22 +4,26 @@ ZIGNOS の bootstrap・イメージ作成・起動テストのスクリプト群
 
 ## スクリプト
 
-| スクリプト | 内容 | 状態 |
+| ファイル | 内容 | 実行環境 |
 |---|---|---|
-| `bootstrap.sh` | 3 段階 bootstrap のオーケストレータ | 骨格(M2 で実装) |
-| `qemu-test.sh` | QEMU での起動テスト | 骨格(M3 で実装) |
+| `bootstrap.sh` | オーケストレータ(ソース取得 → lfs ユーザ → chroot → stage 実行) | build VM 上で root |
+| `stage0.sh` | LFS ch4/ch5/ch6: cross toolchain + 一時ツール | lfs ユーザ(bootstrap.sh が呼ぶ) |
+| `stage1.sh` | LFS ch7: chroot 準備・essential files・追加一時ツール + Go bootstrap スキャフォールド | chroot 内(bootstrap.sh が呼ぶ) |
+| `stage2.sh` | zpkg による最終システム構築(glibc → gcc → … → zpkg 自家ホスト) | chroot 内(bootstrap.sh が呼ぶ) |
+| `qemu-test.sh` | QEMU 起動テスト | M3 |
 
-## bootstrap の段階
+参照手順: LFS 13.1-systemd(`stage0/1.sh` は書籍に忠実、`stage2.sh` は zpkg レシピに翻訳)。意図的な差分は `bootstrap.sh` のヘッダーコメントを参照。
 
-1. **stage0(host)**: ホストビルドの zpkg が cross toolchain(binutils pass1 / gcc pass1 / kernel headers / glibc)を構築
-2. **stage1(temp chroot)**: ツールチェーンを native 再構築 → Go をソースビルド → zpkg を再構築(自家ホスト開始)
-3. **stage2(native)**: chroot 内の zpkg が core レシピからベースシステムを組み立て
+## 使い方(build VM 内・root)
 
-参照手順: LFS 13.1。方針の詳細は zignos リポジトリの `docs/design-pkg.md` / `docs/design-system.md`。
+1. clean なパーティションを `$LFS`(既定 `/mnt/lfs`)に ext4 でマウント
+2. 4 リポジトリを `~/zignos` 下に clone、Go を導入(zignos/docs/env.md)
+3. `sudo ./bootstrap.sh`
 
-## 使い方(現状は骨格確認)
+- ソース一式(約 480MB)は `$LFS/sources` に自動ダウンロードされ、md5/sha256 検証される
+- stage2 で失敗した場合は bootstrap.sh を実行し直すと、zpkg がインストール済みパッケージをスキップするため stage2 から再開しやすい(stage0/1 は未対応 — その場合は手動で途中位置から)
+- stage0(ツールチェーン)に 1〜2 時間、stage2(最終システム)に 2〜4 時間程度を見込む
 
-```sh
-cd zignos-build
-./bootstrap.sh        # TODO 表示のみ
-```
+## qemu-test.sh
+
+M3 で実装(kernel + init + rootfs イメージ生成後)。
