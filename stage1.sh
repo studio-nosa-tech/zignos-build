@@ -55,7 +55,14 @@ EOF
 cat > /etc/group <<'EOF'
 root:x:0:
 bin:x:1:
+sys:x:3:
+tty:x:5:
 daemon:x:6:
+disk:x:8:
+lp:x:9:
+dialout:x:20:
+audio:x:29:
+video:x:44:
 utmp:x:15:
 nogroup:x:65534:
 EOF

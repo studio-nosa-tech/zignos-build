@@ -140,14 +140,14 @@ EOF
 mount_vfs() {
 	log "7.3 virtual kernel file systems"
 	mkdir -pv "$LFS"/{dev,proc,sys,run}
-	mount -v --bind /dev "$LFS/dev"
-	mount -vt devpts devpts -o gid=5,mode=0620 "$LFS/dev/pts"
-	mount -vt proc proc "$LFS/proc"
-	mount -vt sysfs sysfs "$LFS/sys"
-	mount -vt tmpfs tmpfs "$LFS/run"
+	mountpoint -q "$LFS/dev" || mount -v --bind /dev "$LFS/dev"
+	mountpoint -q "$LFS/dev/pts" || mount -vt devpts devpts -o gid=5,mode=0620 "$LFS/dev/pts"
+	mountpoint -q "$LFS/proc" || mount -vt proc proc "$LFS/proc"
+	mountpoint -q "$LFS/sys" || mount -vt sysfs sysfs "$LFS/sys"
+	mountpoint -q "$LFS/run" || mount -vt tmpfs tmpfs "$LFS/run"
 	if [ -h "$LFS/dev/shm" ]; then
 		install -v -d -m 1777 "$LFS$(realpath /dev/shm)"
-	else
+	elif ! mountpoint -q "$LFS/dev/shm"; then
 		mount -vt tmpfs -o nosuid,nodev tmpfs "$LFS/dev/shm"
 	fi
 }
@@ -191,15 +191,14 @@ run_stage() {
 	chroot_run "$script"
 }
 
-main() {
-	preflight
-	sources_fetch
-	prepare_lfs_user
+usage() {
+	echo "usage: bootstrap.sh [all|stage1|stage2]" >&2
+	echo "  all    (default) full run: sources, stage0, stage1, stage2" >&2
+	echo "  stage1 resume from stage1 (stage0 result already in \$LFS)" >&2
+	echo "  stage2 resume from stage2 (only scaffolding + zpkg run)" >&2
+}
 
-	log "stage0: ch5+ch6 as lfs user"
-	install -m 644 "$ZIGNOS_BUILD/stage0.sh" "$LFS/tmp/stage0.sh"
-	su -s /bin/bash lfs -c "LFS=$LFS LFS_TGT=$LFS_TGT MAKEFLAGS=-j$JOBS bash $LFS/tmp/stage0.sh"
-
+resume_stage1() {
 	log "7.2 changing ownership"
 	chown --from lfs -R root:root "$LFS"/{usr,var,etc,tools}
 	case "$(uname -m)" in x86_64) chown --from lfs -R root:root "$LFS/lib64" ;; esac
@@ -208,6 +207,33 @@ main() {
 	run_stage stage1.sh
 	scaffold
 	run_stage stage2.sh
+}
+
+main() {
+	preflight
+	case "${1:-all}" in
+		all)
+			sources_fetch
+			prepare_lfs_user
+
+			log "stage0: ch5+ch6 as lfs user"
+			install -m 644 "$ZIGNOS_BUILD/stage0.sh" "$LFS/tmp/stage0.sh"
+			su -s /bin/bash lfs -c "LFS=$LFS LFS_TGT=$LFS_TGT MAKEFLAGS=-j$JOBS bash $LFS/tmp/stage0.sh"
+			resume_stage1
+			;;
+		stage1)
+			resume_stage1
+			;;
+		stage2)
+			mount_vfs
+			scaffold
+			run_stage stage2.sh
+			;;
+		*)
+			usage
+			die "unknown argument: $1"
+			;;
+	esac
 	unmount_vfs
 
 	log "bootstrap complete: ZIGNOS base system at $LFS"
