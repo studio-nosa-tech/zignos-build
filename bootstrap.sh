@@ -100,7 +100,7 @@ sources_fetch() {
 	mkdir -pv "$LFS"/{etc,var} "$LFS"/usr/{bin,lib,sbin}
 	for i in bin lib sbin; do ln -sv usr/"$i" "$LFS/$i"; done
 	case "$(uname -m)" in x86_64) mkdir -pv "$LFS/lib64" ;; esac
-	mkdir -pv "$LFS/tools" "$SRC"
+	mkdir -pv "$LFS/tools" "$SRC" "$LFS/tmp"
 	chmod -v a+wt "$SRC"
 
 	local url fn hash
@@ -185,6 +185,7 @@ scaffold() {
 run_stage() {
 	# $1 = stage script name in the zignos-build checkout.
 	local script="$1"
+	mkdir -p "$LFS/tmp"
 	cp "$ZIGNOS_BUILD/$script" "$LFS/tmp/$script"
 	chmod +x "$LFS/tmp/$script"
 	chroot_run "$script"
