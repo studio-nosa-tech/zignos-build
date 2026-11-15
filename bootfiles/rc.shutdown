@@ -1,0 +1,4 @@
+#!/bin/sh
+# ZIGNOS shutdown (M3 busybox init).
+/bin/busybox sync
+/bin/busybox umount /proc /sys 2>/dev/null || true

@@ -1,0 +1,11 @@
+#!/bin/sh
+# ZIGNOS early boot (M3 busybox init).
+# devtmpfs is mounted by the kernel (DEVTMPFS_MOUNT); proc/sysfs here.
+
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs none /sys
+/bin/busybox hostname zignos
+
+echo
+echo "Welcome to ZIGNOS (Beyond the Limits.)"
+echo

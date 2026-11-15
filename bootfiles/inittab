@@ -1,0 +1,6 @@
+# ZIGNOS busybox init configuration (M3 boot test; replaced by the
+# initscripts package with OpenRC in M4).
+::sysinit:/etc/rc.init
+ttyS0::respawn:/bin/bash
+::ctrlaltdel:/bin/busybox reboot
+::shutdown:/etc/rc.shutdown
