@@ -9,7 +9,7 @@ set -euo pipefail
 
 LFS="${LFS:-/mnt/lfs}"
 OUT="${OUT:-$(pwd)/zignos-rootfs.img}"
-SIZE="${SIZE:-8G}"
+SIZE="${SIZE:-12G}"
 BOOTFILES="$(cd "$(dirname "$0")" && pwd)/bootfiles"
 
 log() { printf '\n== %s\n' "$*"; }
