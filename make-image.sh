@@ -18,7 +18,7 @@ die() { printf 'make-image: %s\n' "$*" >&2; exit 1; }
 main() {
 	[ "$(id -u)" = 0 ] || die "run as root"
 	local kern=""
-	for kern in "$LFS"/boot/vmlinuz-*; do
+	for kern in "$LFS"/boot/vmlinuz*; do
 		[ -f "$kern" ] && break
 		kern=""
 	done

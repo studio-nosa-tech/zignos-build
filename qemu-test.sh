@@ -21,7 +21,7 @@ pick_kernel() {
 	[ -n "$KERNEL" ] && return
 	# shellcheck disable=SC2012  # vmlinuz names are well-behaved
 	local f
-	f=$(find /mnt/lfs/boot -name 'vmlinuz-*' -type f 2>/dev/null | sort | tail -1) \
+	f=$(find /mnt/lfs/boot -name 'vmlinuz*' -type f 2>/dev/null | sort | tail -1) \
 		|| die "no kernel in /mnt/lfs/boot - build the linux recipe first"
 	[ -n "$f" ] || die "no kernel in /mnt/lfs/boot - build the linux recipe first"
 	KERNEL="$f"
