@@ -75,12 +75,21 @@ SFDISK
 	# The /bin /lib /sbin -> usr/* symlinks are part of the base layout; the
 	# bootstrap tree can lose them through fs damage, and without them
 	# /sbin/init (a symlink chain) goes dangling and the kernel falls back
-	# to /bin/sh.
+	# to /bin/sh. NOTE: ln -sfn does NOT replace an existing REAL directory
+	# (it creates the link inside it), so drop real dirs first.
 	mkdir -pv "$mnt"/usr/{bin,lib,sbin}
 	for s in bin lib sbin; do
-		[ -L "$mnt/$s" ] || ln -sfn "usr/$s" "$mnt/$s"
+		if [ -L "$mnt/$s" ]; then
+			ln -sfn "usr/$s" "$mnt/$s"
+		elif [ -d "$mnt/$s" ]; then
+			rm -rf "${mnt:?}/$s"
+			ln -s "usr/$s" "${mnt:?}/$s"
+		else
+			ln -s "usr/$s" "${mnt:?}/$s"
+		fi
 	done
-	[ -L "$mnt/lib64" ] || ln -sfn lib "$mnt/lib64"
+	[ -L "$mnt/lib64" ] && rm -rf "${mnt:?}/lib64"
+	ln -sfn lib "$mnt/lib64"
 	[ -e "$mnt/usr/sbin/openrc-init" ] || die "openrc-init missing in the system copy"
 
 	log "installing GRUB (manual core.img: probing loop devices is unreliable)"
