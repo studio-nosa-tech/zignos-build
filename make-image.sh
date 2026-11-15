@@ -71,6 +71,18 @@ SFDISK
 	mkdir -pv "$mnt"/{dev,proc,sys,run,tmp,opt} "$mnt/var/tmp" "$mnt/var/lib/seedrng"
 	chmod 1777 "$mnt/tmp" "$mnt/var/tmp"
 
+	log "enforcing usr-merge layout in the image"
+	# The /bin /lib /sbin -> usr/* symlinks are part of the base layout; the
+	# bootstrap tree can lose them through fs damage, and without them
+	# /sbin/init (a symlink chain) goes dangling and the kernel falls back
+	# to /bin/sh.
+	mkdir -pv "$mnt"/usr/{bin,lib,sbin}
+	for s in bin lib sbin; do
+		[ -L "$mnt/$s" ] || ln -sfn "usr/$s" "$mnt/$s"
+	done
+	[ -L "$mnt/lib64" ] || ln -sfn lib "$mnt/lib64"
+	[ -e "$mnt/usr/sbin/openrc-init" ] || die "openrc-init missing in the system copy"
+
 	log "installing GRUB (manual core.img: probing loop devices is unreliable)"
 	# grub-install inside the chroot resolves loop devices back to the host
 	# filesystem and embeds the wrong UUID. Instead: build a core.img with
