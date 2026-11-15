@@ -65,7 +65,8 @@ SFDISK
 	mountpoint -q "$LFS/dev" || mount --bind /dev "$LFS/dev"
 	mountpoint -q "$LFS/proc" || mount -vt proc proc "$LFS/proc"
 	mountpoint -q "$LFS/sys" || mount -vt sysfs sysfs "$LFS/sys"
-	chroot "$LFS" grub-install --boot-directory=/boot "$loop"
+	# The build VM may itself be EFI-booted; the image is BIOS/MBR.
+	chroot "$LFS" grub-install --target=i386-pc --boot-directory=/boot "$loop"
 
 	log "writing grub.cfg (serial console)"
 	mkdir -pv "$mnt/boot/grub"
