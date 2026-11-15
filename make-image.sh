@@ -49,18 +49,21 @@ SFDISK
 
 	log "copying the system (a few minutes)"
 	# Leftover virtual filesystem mounts (from chroot work) would leak /proc
-	# /sys /dev into the copy; drop them first.
+	# /sys /dev into the copy; drop them first. The mountpoint directories
+	# themselves must still be copied (devtmpfs needs /dev to mount on), so
+	# they are NOT excluded - the unmount above leaves them empty.
 	umount "$LFS/dev/pts" "$LFS/dev" "$LFS/proc" "$LFS/sys" "$LFS/run" 2>/dev/null || true
 	tar -C "$LFS" \
 		--exclude='sources' \
 		--exclude='var/cache/zpkg' \
 		--exclude='opt' \
 		--exclude='tmp' \
-		--exclude='proc' \
-		--exclude='sys' \
-		--exclude='dev' \
-		--exclude='run' \
 		-cf - . | tar -C "$mnt" -xf -
+
+	log "creating runtime mount points"
+	# Safety net in case the source tree lost one of them.
+	mkdir -pv "$mnt"/{dev,proc,sys,run,tmp,opt} "$mnt/var/lib/seedrng"
+	chmod 1777 "$mnt/tmp" "$mnt/var/tmp"
 
 	log "installing GRUB (manual core.img: probing loop devices is unreliable)"
 	# grub-install inside the chroot resolves loop devices back to the host
