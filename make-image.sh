@@ -68,7 +68,12 @@ SFDISK
 	mountpoint -q "$LFS/proc" || mount -vt proc proc "$LFS/proc"
 	mountpoint -q "$LFS/sys" || mount -vt sysfs sysfs "$LFS/sys"
 	# The build VM may itself be EFI-booted; the image is BIOS/MBR.
+	# Bind the target partition over the chroot's /boot: the chroot root is
+	# the 40G bootstrap fs, whose UUID grub-install would otherwise embed
+	# (and whose /boot/grub would receive the modules).
+	mount --bind "$mnt" "$LFS/boot"
 	chroot "$LFS" grub-install --target=i386-pc --boot-directory=/boot "$loop"
+	umount "$LFS/boot"
 
 	log "writing grub.cfg (serial console)"
 	mkdir -pv "$mnt/boot/grub"
