@@ -79,6 +79,7 @@ https://github.com/ninja-build/ninja/archive/v1.13.2/ninja-1.13.2.tar.gz|ninja-1
 https://github.com/mesonbuild/meson/releases/download/1.12.0/meson-1.12.0.tar.gz|meson-1.12.0.tar.gz|9f943c267d63016012efcb0f31ecdd7d
 https://go.dev/dl/go1.27.4.src.tar.gz|go1.27.4.src.tar.gz|~73cfb8571aec0c01177687db87163d46aa20e9779672772891aa17654d9a6099
 https://go.dev/dl/go1.27.4.linux-amd64.tar.gz|go1.27.4.linux-amd64.tar.gz|~7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
+https://busybox.net/downloads/busybox-1.36.1.tar.bz2|busybox-1.36.1.tar.bz2|~b8cc24c9574d809e7279c3be349795c5d5ceb6fdf19ca709f80cde50e47de314
 '
 
 preflight() {
@@ -204,6 +205,14 @@ resume_stage1() {
 	case "$(uname -m)" in x86_64) chown --from lfs -R root:root "$LFS/lib64" ;; esac
 
 	mount_vfs
+	# Let the chroot resolve names (stage2's zpkg fetches sources): the
+	# host resolv.conf may be a systemd stub, which is useless in here.
+	if grep -q "^nameserver" /etc/resolv.conf 2>/dev/null && \
+	   ! grep -q "127.0.0.53" /etc/resolv.conf; then
+		cp -a /etc/resolv.conf "$LFS/etc/resolv.conf"
+	else
+		printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "$LFS/etc/resolv.conf"
+	fi
 	run_stage stage1.sh
 	scaffold
 	run_stage stage2.sh
@@ -225,6 +234,7 @@ main() {
 			resume_stage1
 			;;
 		stage2)
+			sources_fetch
 			mount_vfs
 			scaffold
 			run_stage stage2.sh
