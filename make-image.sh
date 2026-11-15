@@ -35,9 +35,9 @@ label: dos
 start=2048, type=83, bootable
 SFDISK
 
-	local loop
+	local loop=""
+	trap '[ -n "${loop:-}" ] && losetup -d "$loop" 2>/dev/null || true' EXIT
 	loop=$(losetup -Pf --show "$OUT")
-	trap 'losetup -d "$loop" 2>/dev/null || true' EXIT
 	local part="${loop}p1"
 	mkfs.ext4 -F -q -L "$FSLABEL" "$part"
 
