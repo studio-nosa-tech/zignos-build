@@ -49,6 +49,7 @@ main() {
 	install -m 644 "$BOOTFILES/fstab" "$mnt/etc/fstab"
 	install -m 755 "$BOOTFILES/rc.init" "$mnt/etc/rc.init"
 	install -m 755 "$BOOTFILES/rc.shutdown" "$mnt/etc/rc.shutdown"
+	ln -sv /bin/busybox "$mnt/sbin/init"
 
 	umount "$mnt"
 	rmdir "$mnt"
