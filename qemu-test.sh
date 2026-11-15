@@ -61,7 +61,7 @@ main() {
 				| KERNEL="$KERNEL" IMG="$IMG" MEM="$MEM" SMP="$SMP" \
 				timeout 150 bash -c "$(declare -f qemu_cmd)
 qemu_cmd" > "$out" 2>&1 || true
-			if grep -q "ZIGNOS-BOOT-OK" "$out" && grep -q "Welcome to ZIGNOS" "$out"; then
+			if grep -q "ZIGNOS-BOOT-OK" "$out" && grep -q "OpenRC" "$out"; then
 				echo "BOOT CHECK PASSED"
 				grep -a "ZIGNOS-BOOT-OK" "$out"
 				exit 0
