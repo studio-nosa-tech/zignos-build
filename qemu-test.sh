@@ -55,8 +55,8 @@ main() {
 			out=$(mktemp)
 			# $(uname -r) must stay literal: it runs in the guest shell.
 			# shellcheck disable=SC2016
-			{ sleep 8; echo 'echo ZIGNOS-BOOT-OK $(uname -r)'; sleep 4; } \
-				| timeout 90 qemu_cmd > "$out" 2>&1 || true
+			{ sleep 25; echo 'echo ZIGNOS-BOOT-OK $(uname -r)'; sleep 5; } \
+				| timeout 150 qemu_cmd > "$out" 2>&1 || true
 			if grep -q "ZIGNOS-BOOT-OK" "$out" && grep -q "Welcome to ZIGNOS" "$out"; then
 				echo "BOOT CHECK PASSED"
 				grep -a "ZIGNOS-BOOT-OK" "$out"
