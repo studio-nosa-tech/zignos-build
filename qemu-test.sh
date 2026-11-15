@@ -58,7 +58,8 @@ main() {
 			# timeout cannot run a shell function, so pass the function
 			# definition into a child bash.
 			{ sleep 25; echo 'echo ZIGNOS-BOOT-OK $(uname -r)'; sleep 5; } \
-				| timeout 150 bash -c "$(declare -f qemu_cmd)
+				| KERNEL="$KERNEL" IMG="$IMG" MEM="$MEM" SMP="$SMP" \
+				timeout 150 bash -c "$(declare -f qemu_cmd)
 qemu_cmd" > "$out" 2>&1 || true
 			if grep -q "ZIGNOS-BOOT-OK" "$out" && grep -q "Welcome to ZIGNOS" "$out"; then
 				echo "BOOT CHECK PASSED"
