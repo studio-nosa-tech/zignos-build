@@ -35,12 +35,13 @@ main() {
 
 	log "copying the system (this takes a few minutes)"
 	# Tar pipe instead of rsync: the build host has no rsync; the excludes
-	# keep the image free of bootstrap-side data.
+	# keep the image free of bootstrap-side data. Excludes are written
+	# without a leading "./": GNU tar matches member names without it.
 	tar -C "$LFS" \
-		--exclude='./sources' \
-		--exclude='./var/cache/zpkg' \
-		--exclude='./opt' \
-		--exclude='./tmp/*' \
+		--exclude='sources' \
+		--exclude='var/cache/zpkg' \
+		--exclude='opt' \
+		--exclude='tmp' \
 		-cf - . | tar -C "$mnt" -xf -
 
 	log "installing boot files (busybox init)"
