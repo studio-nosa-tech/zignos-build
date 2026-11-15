@@ -46,11 +46,18 @@ SFDISK
 	mount "$part" "$mnt"
 
 	log "copying the system (a few minutes)"
+	# Leftover virtual filesystem mounts (from chroot work) would leak /proc
+	# /sys /dev into the copy; drop them first.
+	umount "$LFS/dev/pts" "$LFS/dev" "$LFS/proc" "$LFS/sys" "$LFS/run" 2>/dev/null || true
 	tar -C "$LFS" \
 		--exclude='sources' \
 		--exclude='var/cache/zpkg' \
 		--exclude='opt' \
 		--exclude='tmp' \
+		--exclude='proc' \
+		--exclude='sys' \
+		--exclude='dev' \
+		--exclude='run' \
 		-cf - . | tar -C "$mnt" -xf -
 
 	log "installing GRUB with the system's grub-install"
