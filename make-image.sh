@@ -109,6 +109,13 @@ SFDISK
 	ln -sfn /usr/sbin/openrc-init "$mnt/sbin/init"
 	ln -sfn /usr/sbin/openrc-init "$mnt/usr/sbin/init"
 
+	# Ship the real-disk installer so the guest can install itself onto a
+	# second disk (see zignos-install.sh).
+	SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+	if [ -f "$SELF_DIR/zignos-install.sh" ]; then
+		install -m 755 "$SELF_DIR/zignos-install.sh" "$mnt/usr/sbin/zignos-install"
+	fi
+
 	log "installing GRUB (manual core.img: probing loop devices is unreliable)"
 	# grub-install inside the chroot resolves loop devices back to the host
 	# filesystem and embeds the wrong UUID. Instead: build a core.img with

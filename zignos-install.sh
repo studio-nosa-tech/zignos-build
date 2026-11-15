@@ -32,6 +32,12 @@ main() {
 		command -v "$c" >/dev/null 2>&1 || die "missing tool: $c"
 	done
 
+	log "Installing ZIGNOS onto $DISK — ALL DATA ON IT WILL BE DESTROYED"
+	if [ "$YES" != 1 ]; then
+		read -r -p "Type YES to continue: " answer
+		[ "$answer" = YES ] || die "aborted"
+	fi
+
 	log "partitioning $DISK (MBR, one bootable ext4 partition) — ALL DATA IS DESTROYED"
 	sfdisk "$DISK" <<'SFDISK'
 label: dos
