@@ -39,7 +39,9 @@ SFDISK
 	trap '[ -n "${loop:-}" ] && losetup -d "$loop" 2>/dev/null || true' EXIT
 	loop=$(losetup -Pf --show "$OUT")
 	local part="${loop}p1"
-	mkfs.ext4 -F -q -L "$FSLABEL" "$part"
+	# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed
+	# (e2fsprogs 1.47+ defaults); disable them for the boot filesystem.
+	mkfs.ext4 -F -q -O ^orphan_file,^metadata_csum_seed -L "$FSLABEL" "$part"
 
 	local mnt
 	mnt=$(mktemp -d)
