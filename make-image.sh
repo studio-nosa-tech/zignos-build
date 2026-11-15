@@ -59,6 +59,13 @@ SFDISK
 	# themselves must still be copied (devtmpfs needs /dev to mount on), so
 	# they are NOT excluded - the unmount above leaves them empty.
 	umount "$LFS/dev/pts" "$LFS/dev" "$LFS/proc" "$LFS/sys" "$LFS/run" 2>/dev/null || true
+	# Repair the source tree layout too: fs damage has repeatedly lost the
+	# root usr-merge symlinks mid-session.
+	for s in bin lib sbin; do
+		[ -L "$LFS/$s" ] && continue
+		rm -rf "${LFS:?}/$s"
+		ln -s "usr/$s" "${LFS:?}/$s"
+	done
 	tar -C "$LFS" \
 		--exclude='sources' \
 		--exclude='var/cache/zpkg' \
@@ -91,6 +98,13 @@ SFDISK
 	[ -L "$mnt/lib64" ] && rm -rf "${mnt:?}/lib64"
 	ln -sfn lib "$mnt/lib64"
 	[ -e "$mnt/usr/sbin/openrc-init" ] || die "openrc-init missing in the system copy"
+
+	# The same fs damage that loses the root symlinks also mangles the init
+	# chain (/sbin/init -> /usr/sbin/init -> nowhere). Rebuild it so PID 1
+	# is reachable regardless of what state the source tree came in.
+	rm -f "$mnt/sbin/sbin" "$mnt/usr/sbin/sbin"   # stray self-referencing links
+	ln -sfn /usr/sbin/openrc-init "$mnt/sbin/init"
+	ln -sfn /usr/sbin/openrc-init "$mnt/usr/sbin/init"
 
 	log "installing GRUB (manual core.img: probing loop devices is unreliable)"
 	# grub-install inside the chroot resolves loop devices back to the host
