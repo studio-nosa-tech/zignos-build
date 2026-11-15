@@ -59,6 +59,9 @@ SFDISK
 	# themselves must still be copied (devtmpfs needs /dev to mount on), so
 	# they are NOT excluded - the unmount above leaves them empty.
 	umount "$LFS/dev/pts" "$LFS/dev" "$LFS/proc" "$LFS/sys" "$LFS/run" 2>/dev/null || true
+	# A stale $LFS/dev bind can make the umount above detach the BUILD VM's
+	# own /dev/pts (pty allocation then fails everywhere). Self-heal:
+	mountpoint -q /dev/pts || mount -vt devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=0666
 	# Repair the source tree layout too: fs damage has repeatedly lost the
 	# root usr-merge symlinks mid-session.
 	for s in bin lib sbin; do
