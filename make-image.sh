@@ -62,7 +62,7 @@ SFDISK
 
 	log "creating runtime mount points"
 	# Safety net in case the source tree lost one of them.
-	mkdir -pv "$mnt"/{dev,proc,sys,run,tmp,opt} "$mnt/var/lib/seedrng"
+	mkdir -pv "$mnt"/{dev,proc,sys,run,tmp,opt} "$mnt/var/tmp" "$mnt/var/lib/seedrng"
 	chmod 1777 "$mnt/tmp" "$mnt/var/tmp"
 
 	log "installing GRUB (manual core.img: probing loop devices is unreliable)"
