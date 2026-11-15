@@ -19,9 +19,11 @@ die() { echo "qemu-test: $*" >&2; exit 1; }
 
 pick_kernel() {
 	[ -n "$KERNEL" ] && return
+	# shellcheck disable=SC2012  # vmlinuz names are well-behaved
 	local f
-	f=$(ls -t /mnt/lfs/boot/vmlinuz-* 2>/dev/null | head -1) \
+	f=$(find /mnt/lfs/boot -name 'vmlinuz-*' -type f 2>/dev/null | sort | tail -1) \
 		|| die "no kernel in /mnt/lfs/boot - build the linux recipe first"
+	[ -n "$f" ] || die "no kernel in /mnt/lfs/boot - build the linux recipe first"
 	KERNEL="$f"
 }
 
@@ -51,7 +53,8 @@ main() {
 		check)
 			local out
 			out=$(mktemp)
-			# type a marker command into the booted shell via stdin, then quit
+			# $(uname -r) must stay literal: it runs in the guest shell.
+			# shellcheck disable=SC2016
 			{ sleep 8; echo 'echo ZIGNOS-BOOT-OK $(uname -r)'; sleep 4; } \
 				| timeout 90 qemu_cmd > "$out" 2>&1 || true
 			if grep -q "ZIGNOS-BOOT-OK" "$out" && grep -q "Welcome to ZIGNOS" "$out"; then

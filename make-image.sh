@@ -17,7 +17,12 @@ die() { printf 'make-image: %s\n' "$*" >&2; exit 1; }
 
 main() {
 	[ "$(id -u)" = 0 ] || die "run as root"
-	[ -f "$LFS/boot/vmlinuz-"* ] || die "no kernel in $LFS/boot - build the linux recipe first"
+	local kern=""
+	for kern in "$LFS"/boot/vmlinuz-*; do
+		[ -f "$kern" ] && break
+		kern=""
+	done
+	[ -n "$kern" ] || die "no kernel in $LFS/boot - build the linux recipe first"
 	[ -f "$BOOTFILES/inittab" ] || die "bootfiles not found next to this script"
 
 	log "creating $OUT ($SIZE)"
