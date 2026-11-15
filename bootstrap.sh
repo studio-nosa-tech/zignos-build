@@ -79,7 +79,7 @@ https://github.com/ninja-build/ninja/archive/v1.13.2/ninja-1.13.2.tar.gz|ninja-1
 https://github.com/mesonbuild/meson/releases/download/1.12.0/meson-1.12.0.tar.gz|meson-1.12.0.tar.gz|9f943c267d63016012efcb0f31ecdd7d
 https://go.dev/dl/go1.27.4.src.tar.gz|go1.27.4.src.tar.gz|~73cfb8571aec0c01177687db87163d46aa20e9779672772891aa17654d9a6099
 https://go.dev/dl/go1.27.4.linux-amd64.tar.gz|go1.27.4.linux-amd64.tar.gz|~7226736c2339719cda28fbf3a54d71aa63bcefe376e98cef00034268dab24840
-https://busybox.net/downloads/busybox-1.36.1.tar.bz2|busybox-1.37.0.tar.bz2|~3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4
+https://busybox.net/downloads/busybox-1.37.0.tar.bz2|busybox-1.37.0.tar.bz2|~3311dff32e746499f4df0d5df04d7eb396382d7e108bb9250e7b519b837043a4
 '
 
 preflight() {
