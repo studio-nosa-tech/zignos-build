@@ -55,8 +55,16 @@ main() {
 			# $(uname -r) must stay literal: it runs in the guest shell.
 			# shellcheck disable=SC2016
 			# timeout cannot run a shell function, so pass the function
-			# definition into a child bash.
-			{ sleep 30; echo 'echo ZIGNOS-BOOT-OK $(uname -r)'; sleep 5; } \
+			# definition into a child bash. Login: root / zignos (set at
+			# bootstrap via chpasswd; change it on any real install).
+			{ sleep 30
+			  echo 'root'
+			  sleep 4
+			  echo 'zignos'
+			  sleep 4
+			  echo 'echo ZIGNOS-BOOT-OK $(uname -r)'
+			  sleep 5
+			} \
 				| KERNEL="$KERNEL" IMG="$IMG" MEM="$MEM" SMP="$SMP" \
 				timeout 200 bash -c "$(declare -f qemu_cmd)
 qemu_cmd" > "$out" 2>&1 || true
