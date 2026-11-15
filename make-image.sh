@@ -29,6 +29,12 @@ main() {
 	[ -x "$LFS/usr/sbin/grub-install" ] || die "grub not installed in $LFS - build the grub recipe first"
 
 	log "creating $OUT ($SIZE, MBR + one ext4 partition)"
+	# Stale loop attachments of the same backing file leave inconsistent
+	# page caches behind (bad block bitmap checksums, "Structure needs
+	# cleaning"); detach everything and drop caches before starting.
+	losetup -D 2>/dev/null || true
+	sync
+	echo 3 > /proc/sys/vm/drop_caches
 	truncate -s "$SIZE" "$OUT"
 	sfdisk "$OUT" <<'SFDISK'
 label: dos
