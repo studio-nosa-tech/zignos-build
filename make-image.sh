@@ -62,18 +62,19 @@ SFDISK
 		--exclude='run' \
 		-cf - . | tar -C "$mnt" -xf -
 
-	log "installing GRUB with the system's grub-install"
-	mkdir -pv "$LFS"/{dev,proc,sys}
-	mountpoint -q "$LFS/dev" || mount --bind /dev "$LFS/dev"
-	mountpoint -q "$LFS/proc" || mount -vt proc proc "$LFS/proc"
-	mountpoint -q "$LFS/sys" || mount -vt sysfs sysfs "$LFS/sys"
-	# The build VM may itself be EFI-booted; the image is BIOS/MBR.
-	# Bind the target partition over the chroot's /boot: the chroot root is
-	# the 40G bootstrap fs, whose UUID grub-install would otherwise embed
-	# (and whose /boot/grub would receive the modules).
-	mount --bind "$mnt" "$LFS/boot"
-	chroot "$LFS" grub-install --target=i386-pc --boot-directory=/boot "$loop"
-	umount "$LFS/boot"
+	log "installing GRUB (manual core.img: probing loop devices is unreliable)"
+	# grub-install inside the chroot resolves loop devices back to the host
+	# filesystem and embeds the wrong UUID. Instead: build a core.img with
+	# an explicit prefix and dd boot.img + core.img into the MBR gap.
+	mkdir -pv "$mnt/boot/grub/i386-pc"
+	cp -a "$LFS"/usr/lib/grub/i386-pc/*.mod "$mnt/boot/grub/i386-pc/"
+	cp -a "$LFS"/usr/lib/grub/i386-pc/*.lst "$mnt/boot/grub/i386-pc/" 2>/dev/null || true
+	chroot "$LFS" grub-mkimage -O i386-pc -d /usr/lib/grub/i386-pc \
+		-o /usr/lib/grub/i386-pc/core-zignos.img \
+		-p '(hd0,msdos1)/boot/grub' \
+		biosdisk part_msdos ext2 normal linux echo serial terminal test
+	dd if="$LFS/usr/lib/grub/i386-pc/boot.img" of="$loop" bs=446 count=1 conv=notrunc
+	dd if="$LFS/usr/lib/grub/i386-pc/core-zignos.img" of="$loop" seek=1 bs=512 conv=notrunc
 
 	log "writing grub.cfg (serial console)"
 	mkdir -pv "$mnt/boot/grub"
