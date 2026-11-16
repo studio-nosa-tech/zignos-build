@@ -20,6 +20,15 @@ ROOT=$(cd "$ROOT" && pwd)
 [ -x "$ROOT/usr/bin/bash" ] || die "$ROOT has no /usr/bin/bash"
 [ -f "$ROOT/etc/zignos-release" ] || die "$ROOT is not a ZIGNOS tree"
 
+# Refuse to start on top of a previous interrupted run: a host /dev or
+# /proc left mounted under $ROOT is how a later `rm -rf $ROOT` can destroy
+# the host's device nodes. Unmount them first, or abort if we cannot.
+for v in dev proc sys run; do
+	if mountpoint -q "$ROOT/$v"; then
+		umount "$ROOT/$v" || die "cannot unmount the stale $ROOT/$v (stop what uses it first)"
+	fi
+done
+
 # shellcheck disable=SC2329  # invoked by the EXIT trap
 cleanup() {
 	umount "$ROOT/dev" 2>/dev/null || true
