@@ -43,7 +43,7 @@ main() {
 label: dos
 start=2048, type=83, bootable
 SFDISK
-	partprobe "$DISK"
+	partx -u "$DISK" 2>/dev/null || true
 	sleep 1
 	local part="${DISK}1"
 
