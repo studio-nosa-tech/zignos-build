@@ -110,6 +110,14 @@ FSTAB
 	[ -f "$STAGE/etc/zignos-release" ] || die "staged copy has no /etc/zignos-release"
 	[ -e "$STAGE/usr/sbin/openrc-init" ] || die "openrc-init missing in the staged copy"
 
+	# Ship the recipe tree so zpkg works on the installed system without
+	# cloning anything: /usr/share/zignos/recipes/{core,main,desktop}.
+	if [ -d "$LFS/sources/zignos-recipes" ]; then
+		mkdir -pv "$STAGE/usr/share/zignos"
+		cp -a "$LFS/sources/zignos-recipes" "$STAGE/usr/share/zignos/recipes"
+		rm -rf "$STAGE/usr/share/zignos/recipes/.git"
+	fi
+
 	# Ship the real-disk installer so the guest can install itself.
 	local self_dir
 	self_dir="$(cd "$(dirname "$0")" && pwd)"
