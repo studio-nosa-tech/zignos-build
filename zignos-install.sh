@@ -93,7 +93,7 @@ SFDISK
 	rm -f "$mnt/sbin/sbin" "$mnt/usr/sbin/sbin"
 
 	log "writing /etc/fstab (PARTUUID-based)"
-	printf 'UUID=%s / ext4 defaults 1 1\n' "$uuid" > "$mnt/etc/fstab"
+	printf 'PARTUUID=%s / ext4 defaults 1 1\n' "$partuuid" > "$mnt/etc/fstab"
 	printf 'proc /proc proc defaults 0 0\n' >> "$mnt/etc/fstab"
 	printf 'sysfs /sys sysfs defaults 0 0\n' >> "$mnt/etc/fstab"
 
