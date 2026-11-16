@@ -82,10 +82,10 @@ main() {
 		if [ -L "$STAGE/$s" ]; then
 			ln -sfn "usr/$s" "$STAGE/$s"
 		elif [ -d "$STAGE/$s" ]; then
-			rm -rf "${stage:?}/$s"
-			ln -s "usr/$s" "${stage:?}/$s"
+			rm -rf "${STAGE:?}/$s"
+			ln -s "usr/$s" "${STAGE:?}/$s"
 		else
-			ln -s "usr/$s" "${stage:?}/$s"
+			ln -s "usr/$s" "${STAGE:?}/$s"
 		fi
 	done
 	[ -L "$STAGE/lib64" ] && rm -rf "${stage:?}/lib64"
