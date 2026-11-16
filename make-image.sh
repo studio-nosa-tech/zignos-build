@@ -16,6 +16,27 @@ SIZE="${SIZE:-12G}"
 FSLABEL="${FSLABEL:-zignos-root}"
 
 log() { printf '\n== %s\n' "$*"; }
+unmount_vfs() {
+	local lfs="$1" v n=0
+	while [ "$n" -lt 5 ]; do
+		n=$((n + 1))
+		mountpoint -q "$lfs/dev/pts" && umount "$lfs/dev/pts" 2>/dev/null
+		for v in dev proc sys run; do
+			mountpoint -q "$lfs/$v" && umount "$lfs/$v" 2>/dev/null
+		done
+		if ! mountpoint -q "$lfs/proc" && ! mountpoint -q "$lfs/sys" 		   && ! mountpoint -q "$lfs/dev" && ! mountpoint -q "$lfs/run"; then
+			return 0
+		fi
+		sleep 1
+	done
+	mountpoint -q "$lfs/dev/pts" && umount -l "$lfs/dev/pts" 2>/dev/null
+	for v in dev proc sys run; do
+		mountpoint -q "$lfs/$v" && umount -l "$lfs/$v" 2>/dev/null
+	done
+	sleep 1
+	return 0
+}
+
 die() { printf 'make-image: %s\n' "$*" >&2; exit 1; }
 
 main() {
@@ -58,7 +79,12 @@ SFDISK
 	# /sys /dev into the copy; drop them first. The mountpoint directories
 	# themselves must still be copied (devtmpfs needs /dev to mount on), so
 	# they are NOT excluded - the unmount above leaves them empty.
-	umount "$LFS/dev/pts" "$LFS/dev" "$LFS/proc" "$LFS/sys" "$LFS/run" 2>/dev/null || true
+	unmount_vfs "$LFS"
+	# Hard requirement: no virtual filesystem may remain under $LFS, or the
+	# copy silently ingests /proc (huge, permission errors, corrupt image).
+	for v in dev proc sys run; do
+		mountpoint -q "$LFS/$v" && die "$LFS/$v is still mounted - refusing to copy"
+	done
 	# A stale $LFS/dev bind can make the umount above detach the BUILD VM's
 	# own /dev/pts (pty allocation then fails everywhere). Self-heal:
 	mountpoint -q /dev/pts || mount -vt devpts devpts /dev/pts -o gid=5,mode=620,ptmxmode=0666
