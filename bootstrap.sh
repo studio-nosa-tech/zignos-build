@@ -178,6 +178,8 @@ scaffold() {
 	rm -rf "$LFS/sources/zignos-recipes" "$LFS/sources/zignos-zpkg"
 	cp -a "$ZIGNOS_RECIPES" "$LFS/sources/zignos-recipes"
 	cp -a "$ZIGNOS_ZPKG_SRC" "$LFS/sources/zignos-zpkg"
+	# base.list — stage2 phase 2 applies the canonical base set from it.
+	cp -a "$ZIGNOS_BUILD/base.list" "$LFS/sources/base.list"
 	# Seed the zpkg source cache so stage2 recipes verify local files
 	# (sha256) instead of re-downloading.
 	mkdir -p "$LFS/var/cache/zpkg"

@@ -50,6 +50,21 @@ autoconf
 bison
 bc
 elfutils
+m4
+texinfo
+diffutils
+patch
+findutils
+gawk
+
+# languages and scripting (adopted from the stage1 temp installs)
+gettext
+perl
+mpdecimal
+libffi
+python3
+ninja
+libevent
 
 # system plumbing
 util-linux
@@ -78,6 +93,11 @@ less
 curl
 git
 iproute2
+wget
+tmux
+htop
+rsync
+which
 
 # NOT in the base set on purpose:
 #   sudo — lives in main/ for people who expect it (doas is the default)

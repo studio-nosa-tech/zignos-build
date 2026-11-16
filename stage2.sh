@@ -1,21 +1,23 @@
 #!/bin/bash
 # ZIGNOS bootstrap stage2 — runs INSIDE the chroot as root.
-# zpkg builds the final system from the core recipes: glibc -> compression
-# libs -> toolchain (gmp/mpfr/mpc -> binutils -> gcc) -> userland ->
-# go -> zpkg (self-hosting).
+# Phase 1 builds the bootstrap core (glibc -> toolchain -> enough userland
+# for zpkg and Go) with a hardcoded list: this phase predates zpkg and the
+# recipe tree, so it cannot come from base.list.
+# Phase 2 applies zignos-build/base.list — the canonical rolling base set.
+# zpkg skips what phase 1 installed, so the two share the same DB.
 #
 # Copied to /tmp by bootstrap.sh and run via chroot.
-# Requires: /sources/zignos-recipes (recipe tree), /sources/zignos-zpkg
-# (source snapshot), /opt/go-bootstrap (Go bootstrap), /usr/bin/zpkg
-# (static host build), /var/cache/zpkg (seeded source cache).
+# Requires: /sources/zignos-recipes (recipe tree), /sources/base.list,
+# /sources/zignos-zpkg (source snapshot), /opt/go-bootstrap (Go bootstrap),
+# /usr/bin/zpkg (static host build), /var/cache/zpkg (seeded source cache).
 
 set -euo pipefail
 
 log() { printf '\n== %s\n' "$*"; }
 
-log "stage2: zpkg builds the final system"
-export ZPKG_REPOS=/sources/zignos-recipes/core
+log "stage2 phase 1: bootstrap core (hardcoded, pre-zpkg)"
 export ZPKG_ROOT=/
+export ZPKG_REPOS=/sources/zignos-recipes/core:/sources/zignos-recipes/main
 
 zpkg install \
 	glibc \
@@ -36,6 +38,12 @@ ldconfig
 log "self-hosting check"
 zpkg --help >/dev/null
 go version
+
+log "stage2 phase 2: apply base.list (the rolling base set)"
+[ -r /sources/base.list ] || { echo "stage2: /sources/base.list missing" >&2; exit 1; }
+# $BASE list is intentionally unquoted: one argument per package.
+# shellcheck disable=SC2086
+zpkg install $(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' /sources/base.list)
 
 log "finalize"
 rm -rf /opt/go-bootstrap
