@@ -156,6 +156,10 @@ SFDISK
 	dd if="$LFS/usr/lib/grub/i386-pc/boot.img" of="$loop" bs=446 count=1 conv=notrunc
 	dd if="$LFS/usr/lib/grub/i386-pc/core-zignos.img" of="$loop" seek=1 bs=512 conv=notrunc
 
+	# Sanity: an interrupted or racing build leaves an empty filesystem.
+	[ -x "$mnt/usr/bin/bash" ] || die "image is incomplete: no /usr/bin/bash in the copy"
+	[ -f "$mnt/etc/zignos-release" ] || die "image is incomplete: no /etc/zignos-release"
+
 	log "writing grub.cfg (serial console)"
 	mkdir -pv "$mnt/boot/grub"
 	cat > "$mnt/boot/grub/grub.cfg" <<'GRUBCFG'
