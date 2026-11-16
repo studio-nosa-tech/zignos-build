@@ -45,6 +45,21 @@ unmount_vfs() {
 	return 0
 }
 
+# merge_dir <src> <dst>: copy entries that are missing from dst. Used when
+# the source tree is not fully usr-merged: /usr wins for duplicates, and
+# copying an identical symlink over itself would fail with "same file".
+merge_dir() {
+	local f base
+	for f in "$1"/*; do
+		[ -e "$f" ] || [ -L "$f" ] || continue
+		base=${f##*/}
+		if [ -e "$2/$base" ] || [ -L "$2/$base" ]; then
+			continue
+		fi
+		cp -a "$f" "$2/"
+	done
+}
+
 main() {
 	[ "$(id -u)" = 0 ] || die "run as root"
 	local kern=""
@@ -85,7 +100,7 @@ main() {
 		elif [ -d "$STAGE/$s" ]; then
 			# Not usr-merged yet: merge the contents into /usr instead of
 			# dropping them (a package may have installed into /sbin).
-			cp -a "$STAGE/$s/." "$STAGE/usr/$s/"
+			merge_dir "$STAGE/$s" "$STAGE/usr/$s"
 			rm -rf "${STAGE:?}/$s"
 			ln -s "usr/$s" "${STAGE:?}/$s"
 		else
@@ -93,7 +108,7 @@ main() {
 		fi
 	done
 	if [ -d "$STAGE/lib64" ] && [ ! -L "$STAGE/lib64" ]; then
-		cp -a "$STAGE/lib64/." "$STAGE/lib/"
+		merge_dir "$STAGE/lib64" "$STAGE/lib"
 		rm -rf "${STAGE:?}/lib64"
 	fi
 	ln -sfn lib "$STAGE/lib64"

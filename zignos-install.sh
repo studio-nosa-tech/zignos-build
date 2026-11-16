@@ -28,6 +28,21 @@ DISK="${1:-}"
 log() { printf '\n== %s\n' "$*"; }
 die() { echo "zignos-install: $*" >&2; exit 1; }
 
+# merge_dir <src> <dst>: copy entries that are missing from dst (usr
+# wins on duplicates; this also avoids cp's "same file" error on identical
+# symlinks).
+merge_dir() {
+	local f base
+	for f in "$1"/*; do
+		[ -e "$f" ] || [ -L "$f" ] || continue
+		base=${f##*/}
+		if [ -e "$2/$base" ] || [ -L "$2/$base" ]; then
+			continue
+		fi
+		cp -a "$f" "$2/"
+	done
+}
+
 main() {
 	[ "$(id -u)" = 0 ] || die "run as root"
 	[ -n "$DISK" ] || { echo "usage: zignos-install [--yes] /dev/sdX" >&2; exit 1; }
@@ -88,7 +103,7 @@ SFDISK
 			ln -sfn "usr/$s" "$mnt/$s"
 		elif [ -d "$mnt/$s" ]; then
 			# Merge instead of dropping: packages may install into /sbin.
-			cp -a "$mnt/$s/." "$mnt/usr/$s/"
+			merge_dir "$mnt/$s" "$mnt/usr/$s"
 			rm -rf "${mnt:?}/$s"
 			ln -s "usr/$s" "${mnt:?}/$s"
 		else
@@ -96,7 +111,7 @@ SFDISK
 		fi
 	done
 	if [ -d "$mnt/lib64" ] && [ ! -L "$mnt/lib64" ]; then
-		cp -a "$mnt/lib64/." "$mnt/lib/"
+		merge_dir "$mnt/lib64" "$mnt/lib"
 		rm -rf "${mnt:?}/lib64"
 	fi
 	ln -sfn lib "$mnt/lib64"
