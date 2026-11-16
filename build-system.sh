@@ -36,7 +36,9 @@ else
 fi
 
 if [ "$ROOT" = "/" ]; then
-	# Live system: no chroot juggling.
+	# Live system: no chroot juggling. $NAMES is intentionally unquoted:
+	# base.list expands to one argument per package.
+	# shellcheck disable=SC2086
 	if [ -n "$REPOS" ]; then
 		exec env ZPKG_REPOS="$REPOS" zpkg install "$@" $NAMES
 	fi
@@ -49,6 +51,8 @@ fi
 ENTER="$DIR/zignos-enter.sh"
 [ -x "$ENTER" ] || die "zignos-enter.sh not found next to this script"
 
+# $NAMES is intentionally unquoted: one argument per base.list package.
+# shellcheck disable=SC2086
 if [ -n "$REPOS" ]; then
 	exec "$ENTER" "$ROOT" /usr/bin/env ZPKG_REPOS="$REPOS" /usr/bin/zpkg install "$@" $NAMES
 fi
