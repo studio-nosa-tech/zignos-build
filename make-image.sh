@@ -83,13 +83,19 @@ main() {
 		if [ -L "$STAGE/$s" ]; then
 			ln -sfn "usr/$s" "$STAGE/$s"
 		elif [ -d "$STAGE/$s" ]; then
+			# Not usr-merged yet: merge the contents into /usr instead of
+			# dropping them (a package may have installed into /sbin).
+			cp -a "$STAGE/$s/." "$STAGE/usr/$s/"
 			rm -rf "${STAGE:?}/$s"
 			ln -s "usr/$s" "${STAGE:?}/$s"
 		else
 			ln -s "usr/$s" "${STAGE:?}/$s"
 		fi
 	done
-	[ -L "$STAGE/lib64" ] && rm -rf "${stage:?}/lib64"
+	if [ -d "$STAGE/lib64" ] && [ ! -L "$STAGE/lib64" ]; then
+		cp -a "$STAGE/lib64/." "$STAGE/lib/"
+		rm -rf "${STAGE:?}/lib64"
+	fi
 	ln -sfn lib "$STAGE/lib64"
 	rm -f "$STAGE/sbin/sbin" "$STAGE/usr/sbin/sbin"
 	# PID 1 must be reachable; rebuild the chain regardless of source state.

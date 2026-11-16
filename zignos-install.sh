@@ -87,13 +87,18 @@ SFDISK
 		if [ -L "$mnt/$s" ]; then
 			ln -sfn "usr/$s" "$mnt/$s"
 		elif [ -d "$mnt/$s" ]; then
+			# Merge instead of dropping: packages may install into /sbin.
+			cp -a "$mnt/$s/." "$mnt/usr/$s/"
 			rm -rf "${mnt:?}/$s"
 			ln -s "usr/$s" "${mnt:?}/$s"
 		else
 			ln -s "usr/$s" "${mnt:?}/$s"
 		fi
 	done
-	[ -L "$mnt/lib64" ] && rm -rf "${mnt:?}/lib64"
+	if [ -d "$mnt/lib64" ] && [ ! -L "$mnt/lib64" ]; then
+		cp -a "$mnt/lib64/." "$mnt/lib/"
+		rm -rf "${mnt:?}/lib64"
+	fi
 	ln -sfn lib "$mnt/lib64"
 	chmod 1777 "$mnt/tmp" "$mnt/var/tmp"
 	rm -f "$mnt/sbin/sbin" "$mnt/usr/sbin/sbin"
