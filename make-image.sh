@@ -56,7 +56,7 @@ main() {
 	[ -x "$LFS/usr/sbin/grub-install" ] || die "grub not installed in $LFS - build the grub recipe first"
 
 	STAGE=$(mktemp -d /var/tmp/zignos-stage.XXXXXX)
-	trap 'rm -rf "${STAGE:-}"' EXIT
+	trap 'rc=$?; rm -rf "${STAGE:-}"; exit $rc' EXIT
 
 	log "staging the system into $STAGE"
 	unmount_vfs "$LFS"
