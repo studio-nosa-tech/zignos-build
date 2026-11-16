@@ -53,9 +53,8 @@ SFDISK
 	# The minimal kernel has no initramfs and does not resolve root=UUID=;
 	# PARTUUID (disk id + partition number) is resolved by the kernel and
 	# survives vda/sda renumbering.
-	local partuuid uuid
+	local partuuid
 	partuuid=$(blkid -s PARTUUID -o value "$part" || true)
-	uuid=$(blkid -s UUID -o value "$part")
 
 	local mnt
 	mnt=$(mktemp -d)
