@@ -16,6 +16,7 @@ OUT="${OUT:-$(pwd)/zignos-rootfs.img}"
 SIZE="${SIZE:-12G}"
 FSLABEL="${FSLABEL:-zignos-root}"
 PART_START=2048   # sectors, 1 MiB alignment
+STAGE=""         # staging dir, cleaned by the EXIT trap
 
 log() { printf '\n== %s\n' "$*"; }
 die() { printf 'make-image: %s\n' "$*" >&2; exit 1; }
@@ -54,11 +55,10 @@ main() {
 	[ -n "$kern" ] || die "no kernel in $LFS/boot - build the linux recipe first"
 	[ -x "$LFS/usr/sbin/grub-install" ] || die "grub not installed in $LFS - build the grub recipe first"
 
-	local stage
-	stage=$(mktemp -d /var/tmp/zignos-stage.XXXXXX)
-	trap 'rm -rf "$stage"' EXIT
+	STAGE=$(mktemp -d /var/tmp/zignos-stage.XXXXXX)
+	trap 'rm -rf "${STAGE:-}"' EXIT
 
-	log "staging the system into $stage"
+	log "staging the system into $STAGE"
 	unmount_vfs "$LFS"
 	for v in dev proc sys run; do
 		mountpoint -q "$LFS/$v" && die "$LFS/$v is still mounted - refusing to copy"
@@ -72,46 +72,46 @@ main() {
 		--exclude='sys' \
 		--exclude='dev' \
 		--exclude='run' \
-		-cf - . | tar -C "$stage" -xf -
+		-cf - . | tar -C "$STAGE" -xf -
 
 	log "fixing layout and runtime mount points"
-	mkdir -pv "$stage"/usr/{bin,lib,sbin} "$stage"/{dev,proc,sys,run,tmp} \
-		"$stage/var/tmp" "$stage/var/lib/seedrng" "$stage/boot"
-	chmod 1777 "$stage/tmp" "$stage/var/tmp"
+	mkdir -pv "$STAGE"/usr/{bin,lib,sbin} "$STAGE"/{dev,proc,sys,run,tmp} \
+		"$STAGE/var/tmp" "$STAGE/var/lib/seedrng" "$STAGE/boot"
+	chmod 1777 "$STAGE/tmp" "$STAGE/var/tmp"
 	for s in bin lib sbin; do
-		if [ -L "$stage/$s" ]; then
-			ln -sfn "usr/$s" "$stage/$s"
-		elif [ -d "$stage/$s" ]; then
+		if [ -L "$STAGE/$s" ]; then
+			ln -sfn "usr/$s" "$STAGE/$s"
+		elif [ -d "$STAGE/$s" ]; then
 			rm -rf "${stage:?}/$s"
 			ln -s "usr/$s" "${stage:?}/$s"
 		else
 			ln -s "usr/$s" "${stage:?}/$s"
 		fi
 	done
-	[ -L "$stage/lib64" ] && rm -rf "${stage:?}/lib64"
-	ln -sfn lib "$stage/lib64"
-	rm -f "$stage/sbin/sbin" "$stage/usr/sbin/sbin"
+	[ -L "$STAGE/lib64" ] && rm -rf "${stage:?}/lib64"
+	ln -sfn lib "$STAGE/lib64"
+	rm -f "$STAGE/sbin/sbin" "$STAGE/usr/sbin/sbin"
 	# PID 1 must be reachable; rebuild the chain regardless of source state.
-	ln -sfn /usr/sbin/openrc-init "$stage/sbin/init"
-	ln -sfn /usr/sbin/openrc-init "$stage/usr/sbin/init"
+	ln -sfn /usr/sbin/openrc-init "$STAGE/sbin/init"
+	ln -sfn /usr/sbin/openrc-init "$STAGE/usr/sbin/init"
 
-	[ -x "$stage/usr/bin/bash" ] || die "staged copy has no /usr/bin/bash"
-	[ -f "$stage/etc/zignos-release" ] || die "staged copy has no /etc/zignos-release"
-	[ -e "$stage/usr/sbin/openrc-init" ] || die "openrc-init missing in the staged copy"
+	[ -x "$STAGE/usr/bin/bash" ] || die "staged copy has no /usr/bin/bash"
+	[ -f "$STAGE/etc/zignos-release" ] || die "staged copy has no /etc/zignos-release"
+	[ -e "$STAGE/usr/sbin/openrc-init" ] || die "openrc-init missing in the staged copy"
 
 	# Ship the real-disk installer so the guest can install itself.
 	local self_dir
 	self_dir="$(cd "$(dirname "$0")" && pwd)"
 	if [ -f "$self_dir/zignos-install.sh" ]; then
-		install -m 755 "$self_dir/zignos-install.sh" "$stage/usr/sbin/zignos-install"
+		install -m 755 "$self_dir/zignos-install.sh" "$STAGE/usr/sbin/zignos-install"
 	fi
 
 	log "installing kernel and GRUB payload into the staging tree"
-	cp -a "$LFS"/boot/vmlinuz* "$stage/boot/"
-	mkdir -pv "$stage/boot/grub/i386-pc"
-	cp -a "$LFS"/usr/lib/grub/i386-pc/*.mod "$stage/boot/grub/i386-pc/"
-	cp -a "$LFS"/usr/lib/grub/i386-pc/*.lst "$stage/boot/grub/i386-pc/" 2>/dev/null || true
-	cat > "$stage/boot/grub/grub.cfg" <<'GRUBCFG'
+	cp -a "$LFS"/boot/vmlinuz* "$STAGE/boot/"
+	mkdir -pv "$STAGE/boot/grub/i386-pc"
+	cp -a "$LFS"/usr/lib/grub/i386-pc/*.mod "$STAGE/boot/grub/i386-pc/"
+	cp -a "$LFS"/usr/lib/grub/i386-pc/*.lst "$STAGE/boot/grub/i386-pc/" 2>/dev/null || true
+	cat > "$STAGE/boot/grub/grub.cfg" <<'GRUBCFG'
 serial --unit=0 --speed=115200
 terminal_input serial console
 terminal_output serial console
@@ -132,7 +132,7 @@ SFDISK
 	# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed.
 	mke2fs -q -t ext4 -F -L "$FSLABEL" \
 		-O ^orphan_file,^metadata_csum_seed \
-		-d "$stage" -E offset=$((PART_START * 512)) "$OUT"
+		-d "$STAGE" -E offset=$((PART_START * 512)) "$OUT"
 
 	log "installing GRUB (manual core.img and dd)"
 	chroot "$LFS" grub-mkimage -O i386-pc -d /usr/lib/grub/i386-pc \
