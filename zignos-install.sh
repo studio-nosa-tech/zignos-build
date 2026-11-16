@@ -160,7 +160,9 @@ SFDISK
 	fi
 
 	log "writing /etc/fstab (PARTUUID-based)"
-	printf 'PARTUUID=%s / ext4 defaults 1 1\n' "$partuuid" > "$mnt/etc/fstab"
+	# No initramfs: the kernel has already mounted / read-only when OpenRC
+	# starts, so a boot-time fsck cannot run. pass 0 skips it.
+	printf 'PARTUUID=%s / ext4 defaults 0 0\n' "$partuuid" > "$mnt/etc/fstab"
 	printf 'proc /proc proc defaults 0 0\n' >> "$mnt/etc/fstab"
 	printf 'sysfs /sys sysfs defaults 0 0\n' >> "$mnt/etc/fstab"
 

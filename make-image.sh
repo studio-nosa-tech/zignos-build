@@ -56,6 +56,7 @@ main() {
 	[ -x "$LFS/usr/sbin/grub-install" ] || die "grub not installed in $LFS - build the grub recipe first"
 
 	STAGE=$(mktemp -d /var/tmp/zignos-stage.XXXXXX)
+	# shellcheck disable=SC2154  # rc is assigned by the trap itself
 	trap 'rc=$?; rm -rf "${STAGE:-}"; exit $rc' EXIT
 
 	log "staging the system into $STAGE"
