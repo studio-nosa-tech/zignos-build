@@ -1,0 +1,83 @@
+# ZIGNOS base system — the canonical package set.
+#
+# This file is the single definition of "what a base ZIGNOS system is".
+# build-system.sh applies it (zpkg skips what is already installed, so it
+# is idempotent — run it after every recipe-tree update to roll forward).
+#
+# One package name per line; '#' starts a comment. Order does not matter
+# (zpkg resolves dependencies), sections are just for reading.
+
+# toolchain and libc (kept current by zpkg; built by stage2 on bootstrap)
+glibc
+gcc
+binutils
+make
+
+# core userland
+bash
+coreutils
+tar
+gzip
+grep
+sed
+file
+flex
+pkgconf
+busybox
+go
+zpkg
+
+# libraries
+zlib
+bzip2
+xz
+zstd
+gmp
+mpfr
+mpc
+pcre2
+libcap
+libxcrypt
+ncurses
+readline
+openssl
+expat
+libmnl
+
+# tools that recipes build with (autoconf: kbd testsuite, bison: openssl,
+# bc/elfutils: kernel build) — harmless in images, required on build hosts
+autoconf
+bison
+bc
+elfutils
+
+# system plumbing
+util-linux
+e2fsprogs
+procps
+kbd
+inetutils
+shadow
+ca-certificates
+
+# init and boot
+openrc
+initscripts
+linux
+grub
+
+# network and remote access
+dhcpcd
+openssh
+doas
+
+# editors and everyday tools
+nano
+vim
+less
+curl
+git
+iproute2
+
+# NOT in the base set on purpose:
+#   sudo — lives in main/ for people who expect it (doas is the default)
