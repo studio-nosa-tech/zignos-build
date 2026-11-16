@@ -65,6 +65,7 @@ mpdecimal
 libffi
 python3
 ninja
+meson
 libevent
 
 # system plumbing
