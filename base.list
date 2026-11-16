@@ -85,6 +85,7 @@ grub
 
 # network and remote access
 dhcpcd
+chrony
 openssh
 doas
 
