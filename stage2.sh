@@ -41,8 +41,8 @@ go version
 
 log "stage2 phase 2: apply base.list (the rolling base set)"
 [ -r /sources/base.list ] || { echo "stage2: /sources/base.list missing" >&2; exit 1; }
-# $BASE list is intentionally unquoted: one argument per package.
-# shellcheck disable=SC2086
+# Unquoted on purpose: one argument per package (SC2046).
+# shellcheck disable=SC2046
 zpkg install $(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' /sources/base.list)
 
 log "finalize"
