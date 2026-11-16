@@ -26,10 +26,14 @@ qemu_cmd() {
 	if [ -n "$KERNEL" ]; then
 		kern_args=(-kernel "$KERNEL" -append "root=/dev/vda console=ttyS0")
 	fi
+	# User-mode NIC with an SSH port forward (host 127.0.0.1:$SSH_PORT ->
+	# guest 22) so dhcpcd/sshd can be exercised and the guest used remotely.
 	qemu-system-x86_64 \
 		-machine accel="$accel" \
 		-m "$MEM" -smp "$SMP" \
 		-drive file="$IMG",format=raw,if=virtio \
+		-netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT:-2222}-:22" \
+		-device virtio-net-pci,netdev=net0 \
 		"${kern_args[@]}" \
 		-nographic -no-reboot
 }
