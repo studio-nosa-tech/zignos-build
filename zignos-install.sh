@@ -8,6 +8,13 @@
 # The target disk is partitioned (one bootable ext4 partition) and every
 # byte on it is destroyed. The root password of the running system is
 # carried over (it lives in /etc/shadow, which is copied).
+#
+# A non-root user is created so the system can be used without logging in
+# as root. In interactive mode the username/password are asked for; with
+# --yes they come from ZIGNOS_USER / ZIGNOS_PASSWORD (defaults: zignos /
+# zignos). An SSH public key for that user is taken from the running
+# root's /root/.ssh/authorized_keys when present (interactive mode also
+# accepts a key pasted at the prompt).
 
 set -euo pipefail
 
@@ -91,6 +98,67 @@ SFDISK
 	chmod 1777 "$mnt/tmp" "$mnt/var/tmp"
 	rm -f "$mnt/sbin/sbin" "$mnt/usr/sbin/sbin"
 
+	log "creating the user account"
+	local user pass
+	user="${ZIGNOS_USER:-}"
+	pass="${ZIGNOS_PASSWORD:-}"
+	if [ "$YES" = 1 ]; then
+		user="${user:-zignos}"
+		pass="${pass:-zignos}"
+		echo "zignos-install: creating user '$user' (ZIGNOS_USER/ZIGNOS_PASSWORD override)"
+	else
+		[ -n "$user" ] || read -r -p "Username [zignos]: " user
+		[ -n "$user" ] || user=zignos
+		if [ -z "$pass" ]; then
+			local p1 p2
+			while :; do
+				read -r -s -p "Password for $user: " p1; echo
+				read -r -s -p "Repeat password: " p2; echo
+				[ -n "$p1" ] && [ "$p1" = "$p2" ] && break
+				echo "empty or mismatched password, try again" >&2
+			done
+			pass="$p1"
+		fi
+	fi
+	# The single-quoted script runs inside the target chroot, so $1 is
+	# expanded there (not by this shell).
+	# shellcheck disable=SC2016
+	chroot "$mnt" /bin/bash -c '
+		set -e
+		command -v useradd >/dev/null 2>&1
+		getent group wheel >/dev/null || groupadd -g 10 wheel
+		id -u "$1" >/dev/null 2>&1 || useradd -m -G wheel -s /bin/bash "$1"
+	' _ "$user"
+	printf '%s:%s\n' "$user" "$pass" | chroot "$mnt" chpasswd
+
+	# SSH key for the new user: reuse root's authorized_keys (the usual
+	# "install from the machine you administer" flow); interactive mode
+	# also allows pasting one when root has no keys.
+	log "installing SSH authorized_keys for $user"
+	local keys=""
+	if [ -s /root/.ssh/authorized_keys ]; then
+		keys=/root/.ssh/authorized_keys
+	elif [ "$YES" != 1 ]; then
+		local key=""
+		echo "Paste an SSH public key for $user (empty to skip):"
+		read -r key || key=""
+		if [ -n "$key" ]; then
+			mkdir -p /tmp/zignos-install-key
+			printf '%s\n' "$key" > /tmp/zignos-install-key/authorized_keys
+			keys=/tmp/zignos-install-key/authorized_keys
+		fi
+	fi
+	if [ -n "$keys" ]; then
+		local uid gid
+		uid=$(chroot "$mnt" id -u "$user")
+		gid=$(chroot "$mnt" id -g "$user")
+		install -d -m 700 -o "$uid" -g "$gid" "$mnt/home/$user/.ssh"
+		install -m 600 -o "$uid" -g "$gid" "$keys" "$mnt/home/$user/.ssh/authorized_keys"
+		echo "installed authorized_keys for $user"
+	else
+		echo "no SSH key installed for $user (password login only)"
+	fi
+
 	log "writing /etc/fstab (PARTUUID-based)"
 	printf 'PARTUUID=%s / ext4 defaults 1 1\n' "$partuuid" > "$mnt/etc/fstab"
 	printf 'proc /proc proc defaults 0 0\n' >> "$mnt/etc/fstab"
@@ -132,7 +200,8 @@ GRUBCFG
 	rmdir "$mnt" 2>/dev/null || true
 
 	log "done — ZIGNOS-INSTALL-COMPLETE"
-	echo "Boot from $DISK (root password is the running system's)."
+	echo "Boot from $DISK and log in as $user (root remains available on the console)."
+	echo "SSH: ssh $user@<host>  (root SSH login is disabled)"
 }
 
 main "$@"
