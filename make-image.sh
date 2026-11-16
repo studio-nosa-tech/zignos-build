@@ -95,6 +95,16 @@ main() {
 	ln -sfn /usr/sbin/openrc-init "$STAGE/sbin/init"
 	ln -sfn /usr/sbin/openrc-init "$STAGE/usr/sbin/init"
 
+	# Root is mounted read-only by the kernel before OpenRC starts, so a
+	# boot-time fsck cannot run (no initramfs by design): pass 0 tells the
+	# fsck service to leave it alone. Run e2fsck from a rescue system.
+	cat > "$STAGE/etc/fstab" <<'FSTAB'
+# ZIGNOS filesystem table (images: virtio root, no initramfs)
+/dev/vda1  /     ext4  defaults  0 0
+proc       /proc proc  defaults  0 0
+sysfs      /sys  sysfs defaults  0 0
+FSTAB
+
 	[ -x "$STAGE/usr/bin/bash" ] || die "staged copy has no /usr/bin/bash"
 	[ -f "$STAGE/etc/zignos-release" ] || die "staged copy has no /etc/zignos-release"
 	[ -e "$STAGE/usr/sbin/openrc-init" ] || die "openrc-init missing in the staged copy"
