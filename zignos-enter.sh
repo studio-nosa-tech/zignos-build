@@ -20,6 +20,7 @@ ROOT=$(cd "$ROOT" && pwd)
 [ -x "$ROOT/usr/bin/bash" ] || die "$ROOT has no /usr/bin/bash"
 [ -f "$ROOT/etc/zignos-release" ] || die "$ROOT is not a ZIGNOS tree"
 
+# shellcheck disable=SC2329  # invoked by the EXIT trap
 cleanup() {
 	umount "$ROOT/dev" 2>/dev/null || true
 	umount "$ROOT/proc" 2>/dev/null || true
@@ -35,6 +36,13 @@ mount -t sysfs sysfs "$ROOT/sys"
 mount -t tmpfs -o mode=755 tmpfs "$ROOT/run"
 
 if [ $# -eq 0 ]; then
-	exec chroot "$ROOT" /usr/bin/bash -l
+	# Do not exec: the EXIT trap must run to unmount the vfs. (Leaving
+	# /proc, /sys and /dev mounted in a seed directory is dangerous:
+	# a later rm -rf would walk into the host's /dev.)
+	rc=0
+	chroot "$ROOT" /usr/bin/bash -l || rc=$?
+else
+	rc=0
+	chroot "$ROOT" "$@" || rc=$?
 fi
-exec chroot "$ROOT" "$@"
+exit "$rc"
