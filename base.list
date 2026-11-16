@@ -100,5 +100,12 @@ htop
 rsync
 which
 
+# documentation (man-db formats through groff; man-pages provides the pages)
+groff
+gdbm
+libpipeline
+man-db
+man-pages
+
 # NOT in the base set on purpose:
 #   sudo — lives in main/ for people who expect it (doas is the default)
