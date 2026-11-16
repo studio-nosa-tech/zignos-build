@@ -50,7 +50,11 @@ SFDISK
 	log "creating filesystem (label zignos-root)"
 	# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed.
 	mkfs.ext4 -F -q -O ^orphan_file,^metadata_csum_seed -L zignos-root "$part"
-	local uuid
+	# The minimal kernel has no initramfs and does not resolve root=UUID=;
+	# PARTUUID (disk id + partition number) is resolved by the kernel and
+	# survives vda/sda renumbering.
+	local partuuid uuid
+	partuuid=$(blkid -s PARTUUID -o value "$part" || true)
 	uuid=$(blkid -s UUID -o value "$part")
 
 	local mnt
@@ -88,7 +92,7 @@ SFDISK
 	chmod 1777 "$mnt/tmp" "$mnt/var/tmp"
 	rm -f "$mnt/sbin/sbin" "$mnt/usr/sbin/sbin"
 
-	log "writing /etc/fstab (UUID-based)"
+	log "writing /etc/fstab (PARTUUID-based)"
 	printf 'UUID=%s / ext4 defaults 1 1\n' "$uuid" > "$mnt/etc/fstab"
 	printf 'proc /proc proc defaults 0 0\n' >> "$mnt/etc/fstab"
 	printf 'sysfs /sys sysfs defaults 0 0\n' >> "$mnt/etc/fstab"
@@ -107,7 +111,7 @@ SFDISK
 	chroot "$mnt" grub-install --target=i386-pc --boot-directory=/boot "$DISK"
 	umount "$mnt/dev" "$mnt/proc" "$mnt/sys" 2>/dev/null || true
 
-	log "writing grub.cfg (serial console, UUID root)"
+	log "writing grub.cfg (serial console, PARTUUID root)"
 	mkdir -pv "$mnt/boot/grub"
 	cat > "$mnt/boot/grub/grub.cfg" <<GRUBCFG
 serial --unit=0 --speed=115200
@@ -116,7 +120,7 @@ terminal_output serial console
 set timeout=2
 set default=0
 menuentry "ZIGNOS" {
-	linux /boot/vmlinuz root=UUID=$uuid console=ttyS0
+	linux /boot/vmlinuz root=PARTUUID=$partuuid console=ttyS0
 }
 GRUBCFG
 
