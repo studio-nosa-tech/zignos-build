@@ -205,7 +205,14 @@ SFDISK
 	chroot "$mnt" grub-install --target=i386-pc --boot-directory=/boot "$DISK"
 	umount "$mnt/dev" "$mnt/proc" "$mnt/sys" 2>/dev/null || true
 
-	log "writing grub.cfg (serial console, PARTUUID root)"
+	# grub-install writes the 440-byte boot code and must keep the MBR disk
+	# id (the PARTUUID source). Catch it if that ever changes.
+	local nowuuid
+	nowuuid=$(blkid -s PARTUUID -o value "$part" || true)
+	[ "$nowuuid" = "$partuuid" ] ||
+		die "PARTUUID changed during grub-install ($partuuid -> $nowuuid)"
+
+	log "writing grub.cfg (serial + VGA console, PARTUUID root)"
 	mkdir -pv "$mnt/boot/grub"
 	cat > "$mnt/boot/grub/grub.cfg" <<GRUBCFG
 serial --unit=0 --speed=115200
