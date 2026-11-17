@@ -6,7 +6,7 @@
 #                           working shell echo, exit 0/1
 #
 # Default: boot the partitioned image via its GRUB bootloader.
-# Set KERNEL=<bzImage> (plus IMG=/var/lfs.img) for direct kernel boot of
+# Set KERNEL=<bzImage> (plus IMG=/var/zignos.img) for direct kernel boot of
 # the bootstrap tree, like the M3 flow did.
 # Set UEFI=1 for a GPT/UEFI image: QEMU then boots OVMF (edk2) instead of
 # SeaBIOS. OVMF_CODE/OVMF_VARS can override the firmware paths.

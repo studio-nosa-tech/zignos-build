@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build the ZIGNOS bootable disk image from the bootstrap result ($LFS).
+# Build the ZIGNOS bootable disk image from the bootstrap result ($ZIGNOS_ROOT).
 #
 # The root filesystem is produced WITHOUT loop-mounting it: the system is
 # staged into a plain directory and mke2fs -d populates the partition in one
@@ -13,11 +13,11 @@
 # root=UUID=..., so the image can be dd'd to any disk.
 #
 # Requires: linux (kernel + initramfs) and grub (BIOS + UEFI) installed into
-# $LFS. UEFI mode additionally requires mkfs.vfat and losetup on the host.
+# $ZIGNOS_ROOT. UEFI mode additionally requires mkfs.vfat and losetup on the host.
 
 set -euo pipefail
 
-LFS="${LFS:-/mnt/lfs}"
+ZIGNOS_ROOT="${ZIGNOS_ROOT:-/mnt}"
 OUT="${OUT:-$(pwd)/zignos-rootfs.img}"
 SIZE="${SIZE:-12G}"
 FSLABEL="${FSLABEL:-zignos-root}"
@@ -52,12 +52,12 @@ merge_dir() {
 main() {
 	[ "$(id -u)" = 0 ] || die "run as root"
 	local kern=""
-	for kern in "$LFS"/boot/vmlinuz*; do
+	for kern in "$ZIGNOS_ROOT"/boot/vmlinuz*; do
 		[ -f "$kern" ] && break
 		kern=""
 	done
-	[ -n "$kern" ] || die "no kernel in $LFS/boot - build the linux recipe first"
-	[ -x "$LFS/usr/sbin/grub-install" ] || die "grub not installed in $LFS - build the grub recipe first"
+	[ -n "$kern" ] || die "no kernel in $ZIGNOS_ROOT/boot - build the linux recipe first"
+	[ -x "$ZIGNOS_ROOT/usr/sbin/grub-install" ] || die "grub not installed in $ZIGNOS_ROOT - build the grub recipe first"
 
 	STAGE=$(mktemp -d /var/tmp/zignos-stage.XXXXXX)
 	# shellcheck disable=SC2154  # rc is assigned by the trap itself
@@ -76,23 +76,23 @@ main() {
 	}
 	trap cleanup EXIT
 
-	[ -f "$LFS/boot/initramfs.img" ] ||
-		die "no initramfs in $LFS/boot - rebuild the linux recipe (initramfs)"
+	[ -f "$ZIGNOS_ROOT/boot/initramfs.img" ] ||
+		die "no initramfs in $ZIGNOS_ROOT/boot - rebuild the linux recipe (initramfs)"
 	ROOTUUID=$(cat /proc/sys/kernel/random/uuid)
 	[ -n "$ROOTUUID" ] || die "could not generate a root filesystem UUID"
 
 	log "staging the system into $STAGE"
-	# Do NOT unmount $LFS/dev, /proc, /sys or /run: $LFS/dev is usually a
-	# bind mount of the host /dev, and unmounting $LFS/dev/pts there also
+	# Do NOT unmount $ZIGNOS_ROOT/dev, /proc, /sys or /run: $ZIGNOS_ROOT/dev is usually a
+	# bind mount of the host /dev, and unmounting $ZIGNOS_ROOT/dev/pts there also
 	# detaches the HOST's devpts (this broke sshd on the build VM twice).
 	# The tar excludes below drop those directories; the staging tree
 	# recreates the mount points.
 	for v in dev proc sys run; do
-		if mountpoint -q "$LFS/$v"; then
-			echo "make-image: note: $LFS/$v is mounted; it is excluded from the copy"
+		if mountpoint -q "$ZIGNOS_ROOT/$v"; then
+			echo "make-image: note: $ZIGNOS_ROOT/$v is mounted; it is excluded from the copy"
 		fi
 	done
-	tar -C "$LFS" \
+	tar -C "$ZIGNOS_ROOT" \
 		--exclude='sources' \
 		--exclude='var/cache/zpkg' \
 		--exclude='opt' \
@@ -146,9 +146,9 @@ FSTAB
 
 	# Ship the recipe tree so zpkg works on the installed system without
 	# cloning anything: /usr/share/zignos/recipes/{core,main,desktop}.
-	if [ -d "$LFS/sources/zignos-recipes" ]; then
+	if [ -d "$ZIGNOS_ROOT/sources/zignos-recipes" ]; then
 		mkdir -pv "$STAGE/usr/share/zignos"
-		cp -a "$LFS/sources/zignos-recipes" "$STAGE/usr/share/zignos/recipes"
+		cp -a "$ZIGNOS_ROOT/sources/zignos-recipes" "$STAGE/usr/share/zignos/recipes"
 		rm -rf "$STAGE/usr/share/zignos/recipes/.git"
 	fi
 
@@ -160,12 +160,12 @@ FSTAB
 	fi
 
 	log "installing kernel and initramfs into the staging tree"
-	cp -a "$LFS"/boot/vmlinuz* "$STAGE/boot/"
-	cp -a "$LFS/boot/initramfs.img" "$STAGE/boot/initramfs.img"
+	cp -a "$ZIGNOS_ROOT"/boot/vmlinuz* "$STAGE/boot/"
+	cp -a "$ZIGNOS_ROOT/boot/initramfs.img" "$STAGE/boot/initramfs.img"
 	# BIOS GRUB loads extra modules from the prefix; copy them into /boot.
 	mkdir -pv "$STAGE/boot/grub/i386-pc"
-	cp -a "$LFS"/usr/lib/grub/i386-pc/*.mod "$STAGE/boot/grub/i386-pc/"
-	cp -a "$LFS"/usr/lib/grub/i386-pc/*.lst "$STAGE/boot/grub/i386-pc/" 2>/dev/null || true
+	cp -a "$ZIGNOS_ROOT"/usr/lib/grub/i386-pc/*.mod "$STAGE/boot/grub/i386-pc/"
+	cp -a "$ZIGNOS_ROOT"/usr/lib/grub/i386-pc/*.lst "$STAGE/boot/grub/i386-pc/" 2>/dev/null || true
 
 	# Both consoles: laptops/desktops use tty0, servers (and the QEMU test)
 	# use ttyS0. The last console= is /dev/console, so keep ttyS0 last.
@@ -214,7 +214,7 @@ SFDISK
 			-d "$STAGE" -E offset=$((ROOT_START * 512)) "$OUT" "$root_blocks"
 
 		log "building the EFI bootloader (grub-mkstandalone)"
-		cat > "$LFS/tmp/zignos-uefi-grub.cfg" <<GRUBCFG
+		cat > "$ZIGNOS_ROOT/tmp/zignos-uefi-grub.cfg" <<GRUBCFG
 serial --unit=0 --speed=115200
 terminal_input serial console
 terminal_output serial console
@@ -223,7 +223,7 @@ set default=0
 search --no-floppy --fs-uuid --set=root $ROOTUUID
 $GRUB_ENTRY
 GRUBCFG
-		chroot "$LFS" grub-mkstandalone -O x86_64-efi \
+		chroot "$ZIGNOS_ROOT" grub-mkstandalone -O x86_64-efi \
 			-o /tmp/BOOTX64.EFI \
 			--modules="part_gpt part_msdos fat ext2 normal search search_fs_uuid linux echo serial terminal" \
 			"boot/grub/grub.cfg=/tmp/zignos-uefi-grub.cfg"
@@ -236,7 +236,7 @@ GRUBCFG
 		ESP_LOOP=$(losetup -f --show "$ESP_IMG")
 		mount -t vfat "$ESP_LOOP" "$ESP_MNT"
 		mkdir -p "$ESP_MNT/EFI/BOOT"
-		cp "$LFS/tmp/BOOTX64.EFI" "$ESP_MNT/EFI/BOOT/BOOTX64.EFI"
+		cp "$ZIGNOS_ROOT/tmp/BOOTX64.EFI" "$ESP_MNT/EFI/BOOT/BOOTX64.EFI"
 		# The firmware fallback path is enough; no NVRAM entry is written.
 		sync
 		umount "$ESP_MNT"
@@ -247,7 +247,7 @@ GRUBCFG
 		dd if="$ESP_IMG" of="$OUT" bs=512 seek=$PART_START conv=notrunc status=none
 		rm -f "$ESP_IMG"
 		ESP_IMG=""
-		rm -f "$LFS/tmp/BOOTX64.EFI" "$LFS/tmp/zignos-uefi-grub.cfg"
+		rm -f "$ZIGNOS_ROOT/tmp/BOOTX64.EFI" "$ZIGNOS_ROOT/tmp/zignos-uefi-grub.cfg"
 
 		log "done: $OUT (bootable: UEFI -> BOOTX64.EFI -> kernel + initramfs -> OpenRC)"
 		return 0
@@ -267,15 +267,15 @@ SFDISK
 		-d "$STAGE" -E offset=$((PART_START * 512)) "$OUT"
 
 	log "installing GRUB (manual core.img and dd)"
-	chroot "$LFS" grub-mkimage -O i386-pc -d /usr/lib/grub/i386-pc \
+	chroot "$ZIGNOS_ROOT" grub-mkimage -O i386-pc -d /usr/lib/grub/i386-pc \
 		-o /usr/lib/grub/i386-pc/core-zignos.img \
 		-p '(hd0,msdos1)/boot/grub' \
 		biosdisk part_msdos ext2 normal linux echo serial terminal test \
 		search search_fs_uuid
 	# 440 bytes = the boot code only. 446 would also overwrite the MBR disk
 	# signature at offset 440; GRUB's boot.img has zeros there.
-	dd if="$LFS/usr/lib/grub/i386-pc/boot.img" of="$OUT" bs=440 count=1 conv=notrunc status=none
-	dd if="$LFS/usr/lib/grub/i386-pc/core-zignos.img" of="$OUT" seek=1 bs=512 conv=notrunc status=none
+	dd if="$ZIGNOS_ROOT/usr/lib/grub/i386-pc/boot.img" of="$OUT" bs=440 count=1 conv=notrunc status=none
+	dd if="$ZIGNOS_ROOT/usr/lib/grub/i386-pc/core-zignos.img" of="$OUT" seek=1 bs=512 conv=notrunc status=none
 
 	log "done: $OUT (bootable: BIOS -> GRUB -> kernel + initramfs -> OpenRC)"
 }

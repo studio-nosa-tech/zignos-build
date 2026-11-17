@@ -16,19 +16,19 @@
 # recipes with tests skipped, Go bootstrapped from the official binary then
 # rebuilt from source as a package.
 #
-# Run as root on the build VM with a clean ext4 partition mounted at $LFS.
+# Run as root on the build VM with a clean ext4 partition mounted at $ZIGNOS_ROOT.
 # Host prerequisites: see zignos/docs/env.md.
 
 set -euo pipefail
 
-LFS="${LFS:-/mnt/lfs}"
+ZIGNOS_ROOT="${ZIGNOS_ROOT:-/mnt}"
 LFS_TGT="$(uname -m)-lfs-linux-gnu"
 JOBS="${JOBS:-$(nproc)}"
 ZIGNOS_DIR="${ZIGNOS_DIR:-$HOME/zignos}"
 ZIGNOS_RECIPES="${ZIGNOS_RECIPES:-$ZIGNOS_DIR/zignos-recipes}"
 ZIGNOS_ZPKG_SRC="${ZIGNOS_ZPKG_SRC:-$ZIGNOS_DIR/zpkg}"
 ZIGNOS_BUILD="$(cd "$(dirname "$0")" && pwd)"
-SRC="$LFS/sources"
+SRC="$ZIGNOS_ROOT/sources"
 
 log() { printf '\n\033[1;36m== %s\033[0m\n' "$*"; }
 die() { printf '\033[1;31mbootstrap: %s\033[0m\n' "$*" >&2; exit 1; }
@@ -85,7 +85,7 @@ https://busybox.net/downloads/busybox-1.37.0.tar.bz2|busybox-1.37.0.tar.bz2|~331
 preflight() {
 	log "preflight"
 	[ "$(id -u)" = 0 ] || die "run as root"
-	mountpoint -q "$LFS" || die "$LFS is not a mountpoint (format+mount a clean partition first)"
+	mountpoint -q "$ZIGNOS_ROOT" || die "$ZIGNOS_ROOT is not a mountpoint (format+mount a clean partition first)"
 	for c in gcc g++ make gawk makeinfo bison perl python3 curl wget tar gzip xz bzip2 file patch diff go; do
 		command -v "$c" >/dev/null 2>&1 || die "missing host tool: $c"
 	done
@@ -93,16 +93,16 @@ preflight() {
 	[ -f "$ZIGNOS_ZPKG_SRC/go.mod" ] || die "zpkg source not found: $ZIGNOS_ZPKG_SRC"
 	if [ -e /etc/bash.bashrc ]; then mv -v /etc/bash.bashrc /etc/bash.bashrc.NOUSE; fi
 	umask 022
-	export LFS LFS_TGT JOBS
+	export ZIGNOS_ROOT LFS_TGT JOBS
 }
 
 sources_fetch() {
 	log "ch3: sources ($SRC)"
-	mkdir -pv "$LFS"/{etc,var} "$LFS"/usr/{bin,lib,sbin}
+	mkdir -pv "$ZIGNOS_ROOT"/{etc,var} "$ZIGNOS_ROOT"/usr/{bin,lib,sbin}
 	# -n so re-runs replace the usr/* symlinks instead of following them.
-	for i in bin lib sbin; do ln -sfnv usr/"$i" "$LFS/$i"; done
-	case "$(uname -m)" in x86_64) mkdir -pv "$LFS/lib64" ;; esac
-	mkdir -pv "$LFS/tools" "$SRC" "$LFS/tmp"
+	for i in bin lib sbin; do ln -sfnv usr/"$i" "$ZIGNOS_ROOT/$i"; done
+	case "$(uname -m)" in x86_64) mkdir -pv "$ZIGNOS_ROOT/lib64" ;; esac
+	mkdir -pv "$ZIGNOS_ROOT/tools" "$SRC" "$ZIGNOS_ROOT/tmp"
 	chmod -v a+wt "$SRC"
 
 	local url fn hash
@@ -127,8 +127,8 @@ prepare_lfs_user() {
 		groupadd lfs
 		useradd -s /bin/bash -g lfs -m -k /dev/null lfs
 	}
-	chown -v lfs "$LFS"/{usr{,/*},var,etc,tools}
-	case "$(uname -m)" in x86_64) chown -v lfs "$LFS/lib64" ;; esac
+	chown -v lfs "$ZIGNOS_ROOT"/{usr{,/*},var,etc,tools}
+	case "$(uname -m)" in x86_64) chown -v lfs "$ZIGNOS_ROOT/lib64" ;; esac
 	chown -v lfs "$SRC"
 
 	# ch4.4: clean environment for the lfs user (bash_profile execs env -i).
@@ -141,28 +141,31 @@ EOF
 
 mount_vfs() {
 	log "7.3 virtual kernel file systems"
-	mkdir -pv "$LFS"/{dev,proc,sys,run}
-	mountpoint -q "$LFS/dev" || mount -v --bind /dev "$LFS/dev"
-	mountpoint -q "$LFS/dev/pts" || mount -vt devpts devpts -o gid=5,mode=0620 "$LFS/dev/pts"
-	mountpoint -q "$LFS/proc" || mount -vt proc proc "$LFS/proc"
-	mountpoint -q "$LFS/sys" || mount -vt sysfs sysfs "$LFS/sys"
-	mountpoint -q "$LFS/run" || mount -vt tmpfs tmpfs "$LFS/run"
-	if [ -h "$LFS/dev/shm" ]; then
-		install -v -d -m 1777 "$LFS$(realpath /dev/shm)"
-	elif ! mountpoint -q "$LFS/dev/shm"; then
-		mount -vt tmpfs -o nosuid,nodev tmpfs "$LFS/dev/shm"
+	mkdir -pv "$ZIGNOS_ROOT"/{dev,proc,sys,run}
+	mountpoint -q "$ZIGNOS_ROOT/dev" || mount -v --bind /dev "$ZIGNOS_ROOT/dev"
+	mountpoint -q "$ZIGNOS_ROOT/dev/pts" || mount -vt devpts devpts -o gid=5,mode=0620 "$ZIGNOS_ROOT/dev/pts"
+	mountpoint -q "$ZIGNOS_ROOT/proc" || mount -vt proc proc "$ZIGNOS_ROOT/proc"
+	mountpoint -q "$ZIGNOS_ROOT/sys" || mount -vt sysfs sysfs "$ZIGNOS_ROOT/sys"
+	mountpoint -q "$ZIGNOS_ROOT/run" || mount -vt tmpfs tmpfs "$ZIGNOS_ROOT/run"
+	if [ -h "$ZIGNOS_ROOT/dev/shm" ]; then
+		install -v -d -m 1777 "$ZIGNOS_ROOT$(realpath /dev/shm)"
+	elif ! mountpoint -q "$ZIGNOS_ROOT/dev/shm"; then
+		mount -vt tmpfs -o nosuid,nodev tmpfs "$ZIGNOS_ROOT/dev/shm"
 	fi
 }
 
 unmount_vfs() {
-	mountpoint -q "$LFS/dev/shm" && umount "$LFS/dev/shm" || true
-	mountpoint -q "$LFS/dev/pts" && umount "$LFS/dev/pts" || true
-	umount "$LFS"/{sys,proc,run,dev} 2>/dev/null || true
+	mountpoint -q "$ZIGNOS_ROOT/dev/shm" && umount "$ZIGNOS_ROOT/dev/shm" || true
+	# Do NOT unmount $ZIGNOS_ROOT/dev/pts: /dev is a bind mount of the host
+	# /dev, so that path is the HOST's devpts. Detaching it breaks sshd on
+	# the build machine (same trap make-image hit).
+	umount "$ZIGNOS_ROOT"/{sys,proc,run} 2>/dev/null || true
+	mountpoint -q "$ZIGNOS_ROOT/dev" && umount -l "$ZIGNOS_ROOT/dev" 2>/dev/null || true
 }
 
 chroot_run() {
 	# 7.4: enter the chroot with a clean environment; /tools not in PATH.
-	chroot "$LFS" /usr/bin/env -i \
+	chroot "$ZIGNOS_ROOT" /usr/bin/env -i \
 		HOME=/root TERM="${TERM:-linux}" \
 		PS1='(zignos) \u:\w\$ ' \
 		PATH=/usr/bin:/usr/sbin \
@@ -173,48 +176,48 @@ chroot_run() {
 scaffold() {
 	log "stage1 scaffold: zpkg + recipes + source cache"
 	# Static zpkg, built with the host Go toolchain.
-	(cd "$ZIGNOS_ZPKG_SRC" && CGO_ENABLED=0 go build -o "$LFS/usr/bin/zpkg" ./cmd/zpkg)
+	(cd "$ZIGNOS_ZPKG_SRC" && CGO_ENABLED=0 go build -o "$ZIGNOS_ROOT/usr/bin/zpkg" ./cmd/zpkg)
 	# Recipe tree and zpkg source snapshot for self-hosting.
-	rm -rf "$LFS/sources/zignos-recipes" "$LFS/sources/zignos-zpkg"
-	cp -a "$ZIGNOS_RECIPES" "$LFS/sources/zignos-recipes"
-	cp -a "$ZIGNOS_ZPKG_SRC" "$LFS/sources/zignos-zpkg"
+	rm -rf "$ZIGNOS_ROOT/sources/zignos-recipes" "$ZIGNOS_ROOT/sources/zignos-zpkg"
+	cp -a "$ZIGNOS_RECIPES" "$ZIGNOS_ROOT/sources/zignos-recipes"
+	cp -a "$ZIGNOS_ZPKG_SRC" "$ZIGNOS_ROOT/sources/zignos-zpkg"
 	# base.list — stage2 phase 2 applies the canonical base set from it.
-	cp -a "$ZIGNOS_BUILD/base.list" "$LFS/sources/base.list"
+	cp -a "$ZIGNOS_BUILD/base.list" "$ZIGNOS_ROOT/sources/base.list"
 	# Seed the zpkg source cache so stage2 recipes verify local files
 	# (sha256) instead of re-downloading.
-	mkdir -p "$LFS/var/cache/zpkg"
-	find "$SRC" -maxdepth 1 -type f -exec cp -a {} "$LFS/var/cache/zpkg/" \;
+	mkdir -p "$ZIGNOS_ROOT/var/cache/zpkg"
+	find "$SRC" -maxdepth 1 -type f -exec cp -a {} "$ZIGNOS_ROOT/var/cache/zpkg/" \;
 }
 
 run_stage() {
 	# $1 = stage script name in the zignos-build checkout.
 	local script="$1"
-	mkdir -p "$LFS/tmp"
-	cp "$ZIGNOS_BUILD/$script" "$LFS/tmp/$script"
-	chmod +x "$LFS/tmp/$script"
+	mkdir -p "$ZIGNOS_ROOT/tmp"
+	cp "$ZIGNOS_BUILD/$script" "$ZIGNOS_ROOT/tmp/$script"
+	chmod +x "$ZIGNOS_ROOT/tmp/$script"
 	chroot_run "$script"
 }
 
 usage() {
 	echo "usage: bootstrap.sh [all|stage1|stage2]" >&2
 	echo "  all    (default) full run: sources, stage0, stage1, stage2" >&2
-	echo "  stage1 resume from stage1 (stage0 result already in \$LFS)" >&2
+	echo "  stage1 resume from stage1 (stage0 result already in \$ZIGNOS_ROOT)" >&2
 	echo "  stage2 resume from stage2 (only scaffolding + zpkg run)" >&2
 }
 
 resume_stage1() {
 	log "7.2 changing ownership"
-	chown --from lfs -R root:root "$LFS"/{usr,var,etc,tools}
-	case "$(uname -m)" in x86_64) chown --from lfs -R root:root "$LFS/lib64" ;; esac
+	chown --from lfs -R root:root "$ZIGNOS_ROOT"/{usr,var,etc,tools}
+	case "$(uname -m)" in x86_64) chown --from lfs -R root:root "$ZIGNOS_ROOT/lib64" ;; esac
 
 	mount_vfs
 	# Let the chroot resolve names (stage2's zpkg fetches sources): the
 	# host resolv.conf may be a systemd stub, which is useless in here.
 	if grep -q "^nameserver" /etc/resolv.conf 2>/dev/null && \
 	   ! grep -q "127.0.0.53" /etc/resolv.conf; then
-		cp -a /etc/resolv.conf "$LFS/etc/resolv.conf"
+		cp -a /etc/resolv.conf "$ZIGNOS_ROOT/etc/resolv.conf"
 	else
-		printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "$LFS/etc/resolv.conf"
+		printf 'nameserver 1.1.1.1\nnameserver 8.8.8.8\n' > "$ZIGNOS_ROOT/etc/resolv.conf"
 	fi
 	run_stage stage1.sh
 	scaffold
@@ -229,8 +232,8 @@ main() {
 			prepare_lfs_user
 
 			log "stage0: ch5+ch6 as lfs user"
-			install -m 644 "$ZIGNOS_BUILD/stage0.sh" "$LFS/tmp/stage0.sh"
-			su -s /bin/bash lfs -c "LFS=$LFS LFS_TGT=$LFS_TGT MAKEFLAGS=-j$JOBS bash $LFS/tmp/stage0.sh"
+			install -m 644 "$ZIGNOS_BUILD/stage0.sh" "$ZIGNOS_ROOT/tmp/stage0.sh"
+			su -s /bin/bash lfs -c "ZIGNOS_ROOT=$ZIGNOS_ROOT LFS_TGT=$LFS_TGT MAKEFLAGS=-j$JOBS bash $ZIGNOS_ROOT/tmp/stage0.sh"
 			resume_stage1
 			;;
 		stage1)
@@ -249,7 +252,7 @@ main() {
 	esac
 	unmount_vfs
 
-	log "bootstrap complete: ZIGNOS base system at $LFS"
+	log "bootstrap complete: ZIGNOS base system at $ZIGNOS_ROOT"
 }
 
 main "$@"

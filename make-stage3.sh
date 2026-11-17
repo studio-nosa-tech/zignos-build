@@ -11,11 +11,11 @@
 # package database in the tarball matches exactly what it contains.
 #
 #   make-stage3.sh
-#   LFS=/mnt/lfs OUT=/var/tmp/zignos-stage3.tar.xz make-stage3.sh
+#   ZIGNOS_ROOT=/mnt OUT=/var/tmp/zignos-stage3.tar.xz make-stage3.sh
 
 set -euo pipefail
 
-LFS="${LFS:-/mnt/lfs}"
+ZIGNOS_ROOT="${ZIGNOS_ROOT:-/mnt}"
 OUT="${OUT:-$(pwd)/zignos-stage3-$(date +%Y%m%d)-x86_64.tar.xz}"
 DIR=$(cd "$(dirname "$0")" && pwd)
 WORK=""
@@ -50,9 +50,9 @@ cleanup() {
 
 main() {
 	[ "$(id -u)" = 0 ] || die "run as root"
-	[ -x "$LFS/usr/bin/zpkg" ] || die "$LFS has no zpkg"
-	[ -x "$LFS/usr/bin/bash" ] || die "$LFS does not look like a ZIGNOS tree"
-	[ -f "$LFS/etc/zignos-release" ] || die "$LFS has no /etc/zignos-release"
+	[ -x "$ZIGNOS_ROOT/usr/bin/zpkg" ] || die "$ZIGNOS_ROOT has no zpkg"
+	[ -x "$ZIGNOS_ROOT/usr/bin/bash" ] || die "$ZIGNOS_ROOT does not look like a ZIGNOS tree"
+	[ -f "$ZIGNOS_ROOT/etc/zignos-release" ] || die "$ZIGNOS_ROOT has no /etc/zignos-release"
 
 	# base.list minus the packages that make this a *stage3*: the kernel
 	# and bootloader are the user's job inside the chroot.
@@ -64,8 +64,8 @@ main() {
 	WORK=$(mktemp -d /var/tmp/zignos-stage3.XXXXXX)
 	trap cleanup EXIT
 
-	log "copying $LFS to $WORK"
-	tar -C "$LFS" \
+	log "copying $ZIGNOS_ROOT to $WORK"
+	tar -C "$ZIGNOS_ROOT" \
 		--exclude='./sources' \
 		--exclude='./var/cache/zpkg' \
 		--exclude='./opt' \
@@ -151,15 +151,15 @@ main() {
 proc  /proc proc  defaults 0 0
 sysfs /sys  sysfs defaults 0 0
 FSTAB
-	if [ -f "$LFS/etc/resolv.conf" ]; then
-		cp -L "$LFS/etc/resolv.conf" "$WORK/etc/resolv.conf"
+	if [ -f "$ZIGNOS_ROOT/etc/resolv.conf" ]; then
+		cp -L "$ZIGNOS_ROOT/etc/resolv.conf" "$WORK/etc/resolv.conf"
 	else
 		printf 'nameserver 1.1.1.1\n' > "$WORK/etc/resolv.conf"
 	fi
 
 	log "shipping the recipe tree and stage3 metadata"
 	mkdir -p "$WORK/usr/share/zignos"
-	cp -a "$LFS/sources/zignos-recipes" "$WORK/usr/share/zignos/recipes"
+	cp -a "$ZIGNOS_ROOT/sources/zignos-recipes" "$WORK/usr/share/zignos/recipes"
 	rm -rf "$WORK/usr/share/zignos/recipes/.git"
 	local npkg
 	npkg=$(chroot "$WORK" /usr/bin/zpkg list | wc -l)

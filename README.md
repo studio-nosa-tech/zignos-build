@@ -23,11 +23,11 @@ ZIGNOS の bootstrap・イメージ作成・起動テストのスクリプト群
 
 ## 使い方(build VM 内・root)
 
-1. clean なパーティションを `$LFS`(既定 `/mnt/lfs`)に ext4 でマウント
+1. clean なパーティションを `$ZIGNOS_ROOT`(既定 `/mnt`)に ext4 でマウント
 2. 4 リポジトリを `~/zignos` 下に clone、Go を導入(zignos/docs/env.md)
 3. `sudo ./bootstrap.sh`
 
-- ソース一式(約 480MB)は `$LFS/sources` に自動ダウンロードされ、md5/sha256 検証される
+- ソース一式(約 480MB)は `$ZIGNOS_ROOT/sources` に自動ダウンロードされ、md5/sha256 検証される
 - stage2 で失敗した場合は bootstrap.sh を実行し直すと、zpkg がインストール済みパッケージをスキップするため stage2 から再開しやすい(stage0/1 は未対応 — その場合は手動で途中位置から)
 - stage0(ツールチェーン)に 1〜2 時間、stage2(最終システム)に 2〜4 時間程度を見込む
 

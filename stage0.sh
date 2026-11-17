@@ -1,14 +1,14 @@
 #!/bin/bash
 # ZIGNOS bootstrap stage0 — runs entirely as the lfs user.
 # LFS 13.1-systemd ch5 (cross toolchain) + ch6 (cross-compiled temporary
-# tools), installed into $LFS. Faithful to the book; tests are not run.
+# tools), installed into $ZIGNOS_ROOT. Faithful to the book; tests are not run.
 #
 # shellcheck disable=SC2086,SC2046,SC2016
-# Book-transcribed LFS commands: unquoted $LFS/$LFS_TGT are the book's own
+# Book-transcribed LFS commands: unquoted $ZIGNOS_ROOT/$LFS_TGT are the book's own
 # style, values are controlled (no spaces), and some seds intentionally use
 # single quotes around literal $ patterns.
 #
-# Requires from the environment: LFS, LFS_TGT, MAKEFLAGS
+# Requires from the environment: ZIGNOS_ROOT, LFS_TGT, MAKEFLAGS
 # (bootstrap.sh passes them; see also ch4.4 of the book).
 
 set -euo pipefail
@@ -17,24 +17,24 @@ umask 022
 LC_ALL=POSIX
 PATH=/usr/bin
 if [ ! -L /bin ]; then PATH=/bin:$PATH; fi
-PATH=$LFS/tools/bin:$PATH
-CONFIG_SITE=$LFS/usr/share/config.site
-export LFS LFS_TGT LC_ALL PATH CONFIG_SITE MAKEFLAGS
+PATH=$ZIGNOS_ROOT/tools/bin:$PATH
+CONFIG_SITE=$ZIGNOS_ROOT/usr/share/config.site
+export ZIGNOS_ROOT LFS_TGT LC_ALL PATH CONFIG_SITE MAKEFLAGS
 
-cd "$LFS/sources"
+cd "$ZIGNOS_ROOT/sources"
 
 log() { printf '\n== %s\n' "$*"; }
 
 # enter <dir> <archive> — extract (if needed) and cd in
 enter() {
 	rm -rf "$1"
-	tar -xf "$LFS/sources/$2"
+	tar -xf "$ZIGNOS_ROOT/sources/$2"
 	cd "$1"
 }
 
 # leave <dir> — back to sources and clean up
 leave() {
-	cd "$LFS/sources"
+	cd "$ZIGNOS_ROOT/sources"
 	rm -rf "$1"
 }
 
@@ -42,8 +42,8 @@ build_binutils_pass1() {
 	log "5.2 binutils pass1"
 	enter binutils-2.47 binutils-2.47.tar.xz
 	mkdir -v build && cd build
-	../configure --prefix=$LFS/tools          \
-	             --with-sysroot=$LFS          \
+	../configure --prefix=$ZIGNOS_ROOT/tools          \
+	             --with-sysroot=$ZIGNOS_ROOT          \
 	             --target=$LFS_TGT            \
 	             --disable-nls                \
 	             --enable-gprofng=no          \
@@ -58,18 +58,18 @@ build_binutils_pass1() {
 build_gcc_pass1() {
 	log "5.3 gcc pass1"
 	enter gcc-16.2.0 gcc-16.2.0.tar.xz
-	tar -xf "$LFS/sources/mpfr-4.2.2.tar.xz" && mv -v mpfr-4.2.2 mpfr
-	tar -xf "$LFS/sources/gmp-6.3.0.tar.xz" && mv -v gmp-6.3.0 gmp
-	tar -xf "$LFS/sources/mpc-1.4.1.tar.xz" && mv -v mpc-1.4.1 mpc
+	tar -xf "$ZIGNOS_ROOT/sources/mpfr-4.2.2.tar.xz" && mv -v mpfr-4.2.2 mpfr
+	tar -xf "$ZIGNOS_ROOT/sources/gmp-6.3.0.tar.xz" && mv -v gmp-6.3.0 gmp
+	tar -xf "$ZIGNOS_ROOT/sources/mpc-1.4.1.tar.xz" && mv -v mpc-1.4.1 mpc
 	case $(uname -m) in
 		x86_64) sed -e '/m64=/s/lib64/lib/' -i.orig gcc/config/i386/t-linux64 ;;
 	esac
 	mkdir -v build && cd build
 	../configure                                 \
 	    --target=$LFS_TGT                        \
-	    --prefix=$LFS/tools                      \
+	    --prefix=$ZIGNOS_ROOT/tools                      \
 	    --with-glibc-version=2.44                \
-	    --with-sysroot=$LFS                      \
+	    --with-sysroot=$ZIGNOS_ROOT                      \
 	    --with-newlib                            \
 	    --without-headers                        \
 	    --enable-default-pie                     \
@@ -98,20 +98,20 @@ build_linux_headers() {
 	make mrproper
 	make headers
 	find usr/include -type f ! -name '*.h' -delete
-	cp -rv usr/include "$LFS/usr"
+	cp -rv usr/include "$ZIGNOS_ROOT/usr"
 	leave linux-7.1.8
 }
 
 build_glibc_cross() {
 	log "5.5 glibc (cross)"
 	enter glibc-2.44 glibc-2.44.tar.xz
-	patch -Np1 -i "$LFS/sources/glibc-fhs-1.patch"
-	patch -Np1 -i "$LFS/sources/glibc-2.44-upstream_fixes-1.patch"
+	patch -Np1 -i "$ZIGNOS_ROOT/sources/glibc-fhs-1.patch"
+	patch -Np1 -i "$ZIGNOS_ROOT/sources/glibc-2.44-upstream_fixes-1.patch"
 	case $(uname -m) in
-		i?86) ln -sfv ld-linux.so.2 "$LFS/lib/ld-lsb.so.3" ;;
+		i?86) ln -sfv ld-linux.so.2 "$ZIGNOS_ROOT/lib/ld-lsb.so.3" ;;
 		x86_64)
-			ln -sfv ../lib/ld-linux-x86-64.so.2 "$LFS/lib64"
-			ln -sfv ../lib/ld-linux-x86-64.so.2 "$LFS/lib64/ld-lsb-x86-64.so.3"
+			ln -sfv ../lib/ld-linux-x86-64.so.2 "$ZIGNOS_ROOT/lib64"
+			ln -sfv ../lib/ld-linux-x86-64.so.2 "$ZIGNOS_ROOT/lib64/ld-lsb-x86-64.so.3"
 			;;
 	esac
 	mkdir -v build && cd build
@@ -124,8 +124,8 @@ build_glibc_cross() {
 	    libc_cv_slibdir=/usr/lib             \
 	    --enable-kernel=5.10
 	make
-	make DESTDIR=$LFS install
-	sed '/RTLDLIST=/s@/usr@@g' -i "$LFS/usr/bin/ldd"
+	make DESTDIR=$ZIGNOS_ROOT install
+	sed '/RTLDLIST=/s@/usr@@g' -i "$ZIGNOS_ROOT/usr/bin/ldd"
 	leave glibc-2.44
 }
 
@@ -143,15 +143,15 @@ build_libstdcxx() {
 	    --disable-libstdcxx-pch                  \
 	    --with-gxx-include-dir=/tools/$LFS_TGT/include/c++/16.2.0
 	make
-	make DESTDIR=$LFS install
-	rm -v "$LFS"/usr/lib/lib{stdc++{,exp,fs},supc++}.la
+	make DESTDIR=$ZIGNOS_ROOT install
+	rm -v "$ZIGNOS_ROOT"/usr/lib/lib{stdc++{,exp,fs},supc++}.la
 	leave gcc-16.2.0
 }
 
 build_config_site() {
 	log "6.2 config.site"
-	mkdir -pv "$LFS/usr/share"
-	cat > "$LFS/usr/share/config.site" <<'CSITE'
+	mkdir -pv "$ZIGNOS_ROOT/usr/share"
+	cat > "$ZIGNOS_ROOT/usr/share/config.site" <<'CSITE'
 ac_cv_func_posix_spawn_file_actions_addchdir=yes
 ac_cv_func_posix_spawn_file_actions_addfchdir=yes
 CSITE
@@ -164,7 +164,7 @@ build_m4() {
 	            --host=$LFS_TGT \
 	            --build=$(build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave m4-1.4.21
 }
 
@@ -173,10 +173,10 @@ build_ncurses() {
 	enter ncurses-6.6 ncurses-6.6.tar.gz
 	mkdir build
 	pushd build
-	../configure --prefix=$LFS/tools AWK=gawk
+	../configure --prefix=$ZIGNOS_ROOT/tools AWK=gawk
 	make -C include
 	make -C progs tic
-	install -vm755 progs/tic "$LFS/tools/bin"
+	install -vm755 progs/tic "$ZIGNOS_ROOT/tools/bin"
 	popd
 	./configure --prefix=/usr    \
 	            --host=$LFS_TGT  \
@@ -191,9 +191,9 @@ build_ncurses() {
 	            --disable-stripping \
 	            AWK=gawk
 	make
-	make DESTDIR=$LFS install
-	ln -sv libncursesw.so "$LFS/usr/lib/libncurses.so"
-	sed -e 's/^#if.*XOPEN.*$/#if 1/' -i "$LFS/usr/include/curses.h"
+	make DESTDIR=$ZIGNOS_ROOT install
+	ln -sv libncursesw.so "$ZIGNOS_ROOT/usr/lib/libncurses.so"
+	sed -e 's/^#if.*XOPEN.*$/#if 1/' -i "$ZIGNOS_ROOT/usr/include/curses.h"
 	leave ncurses-6.6
 }
 
@@ -206,8 +206,8 @@ build_bash() {
 	            --without-bash-malloc              \
 	            --docdir=/usr/share/doc/bash-5.3
 	make
-	make DESTDIR=$LFS install
-	ln -sv bash "$LFS/bin/sh"
+	make DESTDIR=$ZIGNOS_ROOT install
+	ln -sv bash "$ZIGNOS_ROOT/bin/sh"
 	leave bash-5.3
 }
 
@@ -219,11 +219,11 @@ build_coreutils() {
 	            --build=$(build-aux/config.guess) \
 	            --enable-install-program=hostname
 	make
-	make DESTDIR=$LFS install
-	mv -v "$LFS/usr/bin/chroot" "$LFS/usr/sbin"
-	mkdir -pv "$LFS/usr/share/man/man8"
-	mv -v "$LFS/usr/share/man/man1/chroot.1" "$LFS/usr/share/man/man8/chroot.8"
-	sed -i 's/"1"/"8"/' "$LFS/usr/share/man/man8/chroot.8"
+	make DESTDIR=$ZIGNOS_ROOT install
+	mv -v "$ZIGNOS_ROOT/usr/bin/chroot" "$ZIGNOS_ROOT/usr/sbin"
+	mkdir -pv "$ZIGNOS_ROOT/usr/share/man/man8"
+	mv -v "$ZIGNOS_ROOT/usr/share/man/man1/chroot.1" "$ZIGNOS_ROOT/usr/share/man/man8/chroot.8"
+	sed -i 's/"1"/"8"/' "$ZIGNOS_ROOT/usr/share/man/man8/chroot.8"
 	leave coreutils-9.11
 }
 
@@ -235,7 +235,7 @@ build_diffutils() {
 	            gl_cv_func_strcasecmp_works=yes \
 	            --build=$(./build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave diffutils-3.12
 }
 
@@ -252,8 +252,8 @@ build_file() {
 	popd
 	./configure --prefix=/usr --host=$LFS_TGT --build=$(./config.guess)
 	make FILE_COMPILE=$(pwd)/build/src/file
-	make DESTDIR=$LFS install
-	rm -v "$LFS/usr/lib/libmagic.la"
+	make DESTDIR=$ZIGNOS_ROOT install
+	rm -v "$ZIGNOS_ROOT/usr/lib/libmagic.la"
 	leave file-5.48
 }
 
@@ -265,7 +265,7 @@ build_findutils() {
 	            --host=$LFS_TGT     \
 	            --build=$(build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave findutils-4.11.0
 }
 
@@ -277,7 +277,7 @@ build_gawk() {
 	            --host=$LFS_TGT \
 	            --build=$(build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave gawk-5.4.1
 }
 
@@ -288,7 +288,7 @@ build_grep() {
 	            --host=$LFS_TGT \
 	            --build=$(./build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave grep-3.12
 }
 
@@ -298,7 +298,7 @@ build_gzip() {
 	# Note: no --build on purpose (the book builds gzip this way).
 	./configure --prefix=/usr --host=$LFS_TGT
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave gzip-1.14
 }
 
@@ -309,7 +309,7 @@ build_make() {
 	            --host=$LFS_TGT \
 	            --build=$(build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave make-4.4.1
 }
 
@@ -320,7 +320,7 @@ build_patch() {
 	            --host=$LFS_TGT \
 	            --build=$(build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave patch-2.8
 }
 
@@ -331,7 +331,7 @@ build_sed() {
 	            --host=$LFS_TGT \
 	            --build=$(./build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave sed-4.10
 }
 
@@ -342,7 +342,7 @@ build_tar() {
 	            --host=$LFS_TGT \
 	            --build=$(build-aux/config.guess)
 	make
-	make DESTDIR=$LFS install
+	make DESTDIR=$ZIGNOS_ROOT install
 	leave tar-1.35
 }
 
@@ -355,8 +355,8 @@ build_xz() {
 	            --disable-static    \
 	            --docdir=/usr/share/doc/xz-5.8.3
 	make
-	make DESTDIR=$LFS install
-	rm -v "$LFS/usr/lib/liblzma.la"
+	make DESTDIR=$ZIGNOS_ROOT install
+	rm -v "$ZIGNOS_ROOT/usr/lib/liblzma.la"
 	leave xz-5.8.3
 }
 
@@ -377,17 +377,17 @@ build_binutils_pass2() {
 	    --enable-new-dtags         \
 	    --enable-default-hash-style=gnu
 	make
-	make DESTDIR=$LFS install
-	rm -v "$LFS"/usr/lib/lib{bfd,ctf,ctf-nobfd,opcodes,sframe}.{a,la}
+	make DESTDIR=$ZIGNOS_ROOT install
+	rm -v "$ZIGNOS_ROOT"/usr/lib/lib{bfd,ctf,ctf-nobfd,opcodes,sframe}.{a,la}
 	leave binutils-2.47
 }
 
 build_gcc_pass2() {
 	log "6.18 gcc pass2"
 	enter gcc-16.2.0 gcc-16.2.0.tar.xz
-	tar -xf "$LFS/sources/mpfr-4.2.2.tar.xz" && mv -v mpfr-4.2.2 mpfr
-	tar -xf "$LFS/sources/gmp-6.3.0.tar.xz" && mv -v gmp-6.3.0 gmp
-	tar -xf "$LFS/sources/mpc-1.4.1.tar.xz" && mv -v mpc-1.4.1 mpc
+	tar -xf "$ZIGNOS_ROOT/sources/mpfr-4.2.2.tar.xz" && mv -v mpfr-4.2.2 mpfr
+	tar -xf "$ZIGNOS_ROOT/sources/gmp-6.3.0.tar.xz" && mv -v gmp-6.3.0 gmp
+	tar -xf "$ZIGNOS_ROOT/sources/mpc-1.4.1.tar.xz" && mv -v mpc-1.4.1 mpc
 	case $(uname -m) in
 		x86_64) sed -e '/m64=/s/lib64/lib/' -i.orig gcc/config/i386/t-linux64 ;;
 	esac
@@ -398,7 +398,7 @@ build_gcc_pass2() {
 	    --host=$LFS_TGT                                \
 	    --target=$LFS_TGT                              \
 	    --prefix=/usr                                  \
-	    --with-build-sysroot=$LFS                      \
+	    --with-build-sysroot=$ZIGNOS_ROOT                      \
 	    --enable-default-pie                           \
 	    --enable-default-ssp                           \
 	    --disable-fixincludes                          \
@@ -415,8 +415,8 @@ build_gcc_pass2() {
 	    LDFLAGS_FOR_TARGET=-L$PWD/$LFS_TGT/libgcc      \
 	    target_configargs=gcc_cv_target_thread_file=posix
 	make
-	make DESTDIR=$LFS install
-	ln -sv gcc "$LFS/usr/bin/cc"
+	make DESTDIR=$ZIGNOS_ROOT install
+	ln -sv gcc "$ZIGNOS_ROOT/usr/bin/cc"
 	leave gcc-16.2.0
 }
 

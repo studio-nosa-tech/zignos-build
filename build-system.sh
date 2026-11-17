@@ -3,7 +3,7 @@
 #
 #   build-system.sh <root> [zpkg args...]
 #
-# <root> is a bootstrap tree ($LFS), an unpacked seed or an installed disk
+# <root> is a bootstrap tree ($ZIGNOS_ROOT), an unpacked seed or an installed disk
 # mount — anything with /usr/bin/bash and /etc/zignos-release. For the
 # RUNNING system pass "/" and zpkg runs directly (no chroot nesting).
 #

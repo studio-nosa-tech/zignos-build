@@ -1,5 +1,5 @@
 #!/bin/bash
-# Build a ZIGNOS seed tarball from the current system tree ($LFS).
+# Build a ZIGNOS seed tarball from the current system tree ($ZIGNOS_ROOT).
 #
 # A seed is the supported bootstrap path for developers: unpack it into a
 # directory or filesystem and you have a complete ZIGNOS root that zpkg can
@@ -12,7 +12,7 @@
 
 set -euo pipefail
 
-LFS="${LFS:-/mnt/lfs}"
+ZIGNOS_ROOT="${ZIGNOS_ROOT:-/mnt}"
 OUT="${OUT:-$(pwd)/zignos-seed-$(date +%Y%m%d)-x86_64.tar.gz}"
 
 log() { printf '\n== %s\n' "$*"; }
@@ -20,14 +20,14 @@ die() { printf 'make-seed: %s\n' "$*" >&2; exit 1; }
 
 main() {
 	[ "$(id -u)" = 0 ] || die "run as root"
-	[ -x "$LFS/usr/bin/bash" ] || die "$LFS does not look like a ZIGNOS tree"
-	[ -f "$LFS/etc/zignos-release" ] || die "$LFS has no /etc/zignos-release"
+	[ -x "$ZIGNOS_ROOT/usr/bin/bash" ] || die "$ZIGNOS_ROOT does not look like a ZIGNOS tree"
+	[ -f "$ZIGNOS_ROOT/etc/zignos-release" ] || die "$ZIGNOS_ROOT has no /etc/zignos-release"
 	for v in dev proc sys run; do
-		mountpoint -q "$LFS/$v" && die "$LFS/$v is mounted - unmount the vfs first"
+		mountpoint -q "$ZIGNOS_ROOT/$v" && die "$ZIGNOS_ROOT/$v is mounted - unmount the vfs first"
 	done
 
-	log "packing $LFS into $OUT"
-	tar -C "$LFS" \
+	log "packing $ZIGNOS_ROOT into $OUT"
+	tar -C "$ZIGNOS_ROOT" \
 		--exclude='./sources' \
 		--exclude='./var/cache/zpkg' \
 		--exclude='./opt' \
