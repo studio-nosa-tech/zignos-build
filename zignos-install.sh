@@ -251,14 +251,25 @@ GRUBCFG
 	mount -vt proc proc "$mnt/proc"
 	mount -vt sysfs sysfs "$mnt/sys"
 	if [ "$UEFI" = 1 ]; then
-		# Removable path (/EFI/BOOT/BOOTX64.EFI): no NVRAM entry and no
-		# efibootmgr needed; firmware on any machine finds this file.
+		# Removable path (/EFI/BOOT/BOOTX64.EFI): firmware on any machine
+		# finds this file, so booting does not depend on NVRAM.
 		mkdir -p "$mnt/boot/efi/EFI/BOOT"
 		chroot "$mnt" grub-mkstandalone -O x86_64-efi \
 			-o /boot/efi/EFI/BOOT/BOOTX64.EFI \
 			--modules="part_gpt part_msdos fat ext2 normal search search_fs_uuid linux echo serial terminal" \
 			"boot/grub/grub.cfg=/tmp/zignos-grub.cfg"
 		echo "UEFI: wrote /boot/efi/EFI/BOOT/BOOTX64.EFI (firmware fallback path)"
+		# efibootmgr lives in main/ and is not part of the minimal base.
+		# When the running image has it, register a proper NVRAM entry too;
+		# the removable path above keeps the install bootable either way.
+		if command -v efibootmgr >/dev/null 2>&1 && [ -d /sys/firmware/efi/efivars ]; then
+			if efibootmgr --create --disk "$DISK" --part 1 \
+				--label ZIGNOS --loader '\EFI\BOOT\BOOTX64.EFI' >/dev/null 2>&1; then
+				echo "UEFI: registered a ZIGNOS boot entry (efibootmgr)"
+			else
+				echo "UEFI: efibootmgr could not add an entry (firmware may be read-only)"
+			fi
+		fi
 	else
 		# The chroot IS the target partition, so grub-install probes the
 		# target /boot directly and embeds its search (no loop ambiguity).
@@ -275,12 +286,18 @@ GRUBCFG
 	if [ "$UEFI" = 1 ]; then
 		umount "$mnt/boot/efi"
 	fi
+	local has_sshd=0
+	[ -x "$mnt/usr/sbin/sshd" ] && has_sshd=1
 	umount "$mnt"
 	rmdir "$mnt" 2>/dev/null || true
 
 	log "done — ZIGNOS-INSTALL-COMPLETE"
 	echo "Boot from $DISK and log in as $user (root remains available on the console)."
-	echo "SSH: ssh $user@<host>  (root SSH login is disabled)"
+	if [ "$has_sshd" = 1 ]; then
+		echo "SSH: ssh $user@<host>  (root SSH login is disabled)"
+	else
+		echo "SSH is not part of the minimal base: zpkg install openssh && rc-update add sshd default"
+	fi
 }
 
 main "$@"

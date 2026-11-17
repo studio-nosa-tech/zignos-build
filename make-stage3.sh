@@ -54,12 +54,15 @@ main() {
 	[ -x "$ZIGNOS_ROOT/usr/bin/bash" ] || die "$ZIGNOS_ROOT does not look like a ZIGNOS tree"
 	[ -f "$ZIGNOS_ROOT/etc/zignos-release" ] || die "$ZIGNOS_ROOT has no /etc/zignos-release"
 
-	# base.list minus the packages that make this a *stage3*: the kernel
-	# and bootloader are the user's job inside the chroot.
-	local allowed
-	allowed=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$DIR/base.list" |
+	# base.list names top-level packages only (Gentoo-style minimal base).
+	# The allowed set is their transitive closure — dependencies and build
+	# dependencies included — minus the kernel and bootloader, which are the
+	# user's job inside the chroot. The closure is resolved with the tree's
+	# own zpkg and recipe tree after the copy.
+	local names
+	names=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$DIR/base.list" |
 		grep -vxE 'linux|grub' | tr '\n' ' ')
-	[ -n "$allowed" ] || die "empty package list"
+	[ -n "$names" ] || die "empty package list"
 
 	WORK=$(mktemp -d /var/tmp/zignos-stage3.XXXXXX)
 	trap cleanup EXIT
@@ -85,6 +88,19 @@ main() {
 	mount -t proc proc "$WORK/proc"
 	mount -t sysfs sysfs "$WORK/sys"
 	VFS_MOUNTED=1
+
+	# The recipe tree is shipped in the tarball anyway; put it in place now
+	# so the closure can be resolved inside the copy.
+	mkdir -p "$WORK/usr/share/zignos"
+	cp -a "$ZIGNOS_ROOT/sources/zignos-recipes" "$WORK/usr/share/zignos/recipes"
+	rm -rf "$WORK/usr/share/zignos/recipes/.git"
+	local allowed
+	# $names is intentionally unquoted: one argument per package.
+	# shellcheck disable=SC2086
+	allowed=$(chroot "$WORK" /usr/bin/env \
+		ZPKG_REPOS=/usr/share/zignos/recipes/core:/usr/share/zignos/recipes/main:/usr/share/zignos/recipes/desktop \
+		/usr/bin/zpkg depends $names | tr '\n' ' ')
+	[ -n "$allowed" ] || die "cannot resolve the base package closure"
 
 	local installed extra p
 	installed=$(chroot "$WORK" /usr/bin/zpkg list | awk '{print $1}')
@@ -157,10 +173,7 @@ FSTAB
 		printf 'nameserver 1.1.1.1\n' > "$WORK/etc/resolv.conf"
 	fi
 
-	log "shipping the recipe tree and stage3 metadata"
-	mkdir -p "$WORK/usr/share/zignos"
-	cp -a "$ZIGNOS_ROOT/sources/zignos-recipes" "$WORK/usr/share/zignos/recipes"
-	rm -rf "$WORK/usr/share/zignos/recipes/.git"
+	log "writing stage3 metadata"
 	local npkg
 	npkg=$(chroot "$WORK" /usr/bin/zpkg list | wc -l)
 	cat > "$WORK/etc/zignos-stage3" <<EOF
