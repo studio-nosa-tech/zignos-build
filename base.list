@@ -88,6 +88,8 @@ dhcpcd
 chrony
 openssh
 doas
+# D-Bus system bus (wpa_supplicant and other daemons register on it)
+dbus
 # WiFi userland (authentication + radio control); the kernel side needs
 # CFG80211/MAC80211 plus drivers when installing on real hardware
 libnl
