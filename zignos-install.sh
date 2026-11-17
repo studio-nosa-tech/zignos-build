@@ -61,6 +61,12 @@ main() {
 		for c in mkfs.vfat grub-mkstandalone; do
 			command -v "$c" >/dev/null 2>&1 || die "missing tool: $c"
 		done
+		# grub's USE flags select the platforms it was built for.
+		[ -d /usr/lib/grub/x86_64-efi ] ||
+			die "grub has no x86_64-efi platform (zpkg use --package grub uefi && zpkg install -f grub)"
+	else
+		[ -d /usr/lib/grub/i386-pc ] ||
+			die "grub has no i386-pc platform (zpkg use --package grub bios && zpkg install -f grub)"
 	fi
 
 	log "Installing ZIGNOS onto $DISK — ALL DATA ON IT WILL BE DESTROYED"
