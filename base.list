@@ -91,11 +91,11 @@ doas
 # D-Bus system bus (wpa_supplicant and other daemons register on it)
 dbus
 # WiFi userland (authentication + radio control); the kernel side needs
-# CFG80211/MAC80211 plus drivers when installing on real hardware
+# CFG80211/MAC80211 plus drivers when installing on real hardware.
+# rfkill itself comes from util-linux, so it is not a separate package.
 libnl
 wpa_supplicant
 iw
-rfkill
 
 # editors and everyday tools
 nano
