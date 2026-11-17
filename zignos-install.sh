@@ -67,7 +67,12 @@ start=2048, type=83, bootable
 SFDISK
 	partx -u "$DISK" 2>/dev/null || true
 	sleep 1
+	# NVMe and eMMC devices use a "p" separator (nvme0n1p1), SATA/virtio
+	# do not (sda1, vda1).
 	local part="${DISK}1"
+	case "$DISK" in
+		*[0-9]) part="${DISK}p1" ;;
+	esac
 
 	log "creating filesystem (label zignos-root)"
 	# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed.
@@ -206,10 +211,10 @@ SFDISK
 serial --unit=0 --speed=115200
 terminal_input serial console
 terminal_output serial console
-set timeout=2
+set timeout=5
 set default=0
 menuentry "ZIGNOS" {
-	linux /boot/vmlinuz root=PARTUUID=$partuuid console=ttyS0
+	linux /boot/vmlinuz root=PARTUUID=$partuuid console=tty0 console=ttyS0
 }
 GRUBCFG
 

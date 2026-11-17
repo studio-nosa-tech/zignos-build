@@ -151,16 +151,6 @@ FSTAB
 	mkdir -pv "$STAGE/boot/grub/i386-pc"
 	cp -a "$LFS"/usr/lib/grub/i386-pc/*.mod "$STAGE/boot/grub/i386-pc/"
 	cp -a "$LFS"/usr/lib/grub/i386-pc/*.lst "$STAGE/boot/grub/i386-pc/" 2>/dev/null || true
-	cat > "$STAGE/boot/grub/grub.cfg" <<'GRUBCFG'
-serial --unit=0 --speed=115200
-terminal_input serial console
-terminal_output serial console
-set timeout=2
-set default=0
-menuentry "ZIGNOS" {
-	linux /boot/vmlinuz root=/dev/vda1 console=ttyS0
-}
-GRUBCFG
 
 	log "creating $OUT ($SIZE, MBR, one bootable ext4 partition)"
 	rm -f "$OUT"
@@ -169,6 +159,31 @@ GRUBCFG
 label: dos
 start=2048, type=83, bootable
 SFDISK
+
+	# root=PARTUUID instead of /dev/vda1: the same image must boot when it is
+	# dd'd to a USB stick, a SATA disk or an NVMe drive. PARTUUID is stable
+	# across sdX/vdX/nvme naming and is copied along with the MBR disk id.
+	partuuid=$(blkid -p -O $((PART_START * 512)) -s PARTUUID -o value "$OUT" 2>/dev/null || true)
+	if [ -z "$partuuid" ]; then
+		diskid=$(sfdisk --disk-id "$OUT")
+		partuuid="${diskid#0x}-01"
+	fi
+	[ -n "$partuuid" ] || die "could not determine the image PARTUUID"
+	echo "PARTUUID=$partuuid"
+
+	# Both consoles: laptops/desktops use tty0, servers (and the QEMU test)
+	# use ttyS0. The last console= is /dev/console, so keep ttyS0 last.
+	cat > "$STAGE/boot/grub/grub.cfg" <<GRUBCFG
+serial --unit=0 --speed=115200
+terminal_input serial console
+terminal_output serial console
+set timeout=2
+set default=0
+menuentry "ZIGNOS" {
+	linux /boot/vmlinuz root=PARTUUID=$partuuid console=tty0 console=ttyS0
+}
+GRUBCFG
+
 	# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed.
 	mke2fs -q -t ext4 -F -L "$FSLABEL" \
 		-O ^orphan_file,^metadata_csum_seed \
