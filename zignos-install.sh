@@ -50,9 +50,18 @@ main() {
 	case "$(findmnt -n -o SOURCE /)" in
 		"$DISK"|"$DISK"[0-9]*) die "refusing: $DISK is the running root disk" ;;
 	esac
+	# Firmware mode decides the disk layout: UEFI -> GPT + ESP,
+	# BIOS -> MBR + one partition. To install UEFI, boot the UEFI image.
+	local UEFI=0
+	[ -d /sys/firmware/efi ] && UEFI=1
 	for c in sfdisk mkfs.ext4 blkid grub-install; do
 		command -v "$c" >/dev/null 2>&1 || die "missing tool: $c"
 	done
+	if [ "$UEFI" = 1 ]; then
+		for c in mkfs.vfat grub-mkstandalone; do
+			command -v "$c" >/dev/null 2>&1 || die "missing tool: $c"
+		done
+	fi
 
 	log "Installing ZIGNOS onto $DISK — ALL DATA ON IT WILL BE DESTROYED"
 	if [ "$YES" != 1 ]; then
@@ -60,32 +69,52 @@ main() {
 		[ "$answer" = YES ] || die "aborted"
 	fi
 
-	log "partitioning $DISK (MBR, one bootable ext4 partition) — ALL DATA IS DESTROYED"
-	sfdisk "$DISK" <<'SFDISK'
+	# NVMe and eMMC devices use a "p" separator (nvme0n1p1), SATA/virtio
+	# do not (sda1, vda1).
+	local psep=""
+	case "$DISK" in
+		*[0-9]) psep="p" ;;
+	esac
+	local part esp=""
+	if [ "$UEFI" = 1 ]; then
+		log "partitioning $DISK (GPT: 100MiB ESP + ext4 root) — ALL DATA IS DESTROYED"
+		sfdisk "$DISK" <<'SFDISK'
+label: gpt
+start=2048, size=204800, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="ZIGNOS ESP"
+start=206848, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="zignos-root"
+SFDISK
+		partx -u "$DISK" 2>/dev/null || true
+		sleep 1
+		esp="${DISK}${psep}1"
+		part="${DISK}${psep}2"
+		log "creating the EFI system partition (FAT32)"
+		mkfs.vfat -F32 -n ZIGNOSESP "$esp"
+	else
+		log "partitioning $DISK (MBR, one bootable ext4 partition) — ALL DATA IS DESTROYED"
+		sfdisk "$DISK" <<'SFDISK'
 label: dos
 start=2048, type=83, bootable
 SFDISK
-	partx -u "$DISK" 2>/dev/null || true
-	sleep 1
-	# NVMe and eMMC devices use a "p" separator (nvme0n1p1), SATA/virtio
-	# do not (sda1, vda1).
-	local part="${DISK}1"
-	case "$DISK" in
-		*[0-9]) part="${DISK}p1" ;;
-	esac
+		partx -u "$DISK" 2>/dev/null || true
+		sleep 1
+		part="${DISK}${psep}1"
+	fi
 
 	log "creating filesystem (label zignos-root)"
 	# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed.
 	mkfs.ext4 -F -q -O ^orphan_file,^metadata_csum_seed -L zignos-root "$part"
-	# The minimal kernel has no initramfs and does not resolve root=UUID=;
-	# PARTUUID (disk id + partition number) is resolved by the kernel and
-	# survives vda/sda renumbering.
-	local partuuid
-	partuuid=$(blkid -s PARTUUID -o value "$part" || true)
+	# The initramfs resolves root=UUID= with busybox blkid.
+	local rootuuid
+	rootuuid=$(blkid -s UUID -o value "$part" || true)
+	[ -n "$rootuuid" ] || die "cannot read the root filesystem UUID"
 
 	local mnt
 	mnt=$(mktemp -d)
 	mount "$part" "$mnt"
+	if [ "$UEFI" = 1 ]; then
+		mkdir -p "$mnt/boot/efi"
+		mount "$esp" "$mnt/boot/efi"
+	fi
 
 	log "copying the running system"
 	# Same copy profile as make-image.sh: keep the system, drop runtime
@@ -184,52 +213,68 @@ SFDISK
 		echo "no SSH key installed for $user (password login only)"
 	fi
 
-	log "writing /etc/fstab (PARTUUID-based)"
-	# No initramfs: the kernel has already mounted / read-only when OpenRC
-	# starts, so a boot-time fsck cannot run. pass 0 skips it.
-	printf 'PARTUUID=%s / ext4 defaults 0 0\n' "$partuuid" > "$mnt/etc/fstab"
+	log "writing /etc/fstab (UUID-based)"
+	# The initramfs mounts / read-only; OpenRC remounts it rw. A boot-time
+	# fsck cannot run on a busy root, so pass 0 keeps the fsck service away.
+	printf 'UUID=%s / ext4 defaults 0 0\n' "$rootuuid" > "$mnt/etc/fstab"
 	printf 'proc /proc proc defaults 0 0\n' >> "$mnt/etc/fstab"
 	printf 'sysfs /sys sysfs defaults 0 0\n' >> "$mnt/etc/fstab"
 
-	log "copying the kernel into the target /boot"
+	log "copying the kernel and initramfs into the target /boot"
 	mkdir -pv "$mnt/boot"
 	cp -a /boot/vmlinuz* "$mnt/boot/" 2>/dev/null || true
+	cp -a /boot/initramfs.img "$mnt/boot/initramfs.img"
+	[ -f "$mnt/boot/initramfs.img" ] ||
+		die "the running system has no /boot/initramfs.img - rebuild the linux recipe"
 
-	log "installing GRUB from the system's grub-install"
-	mkdir -pv "$mnt"/{dev,proc,sys}
-	mount --bind /dev "$mnt/dev"
-	mount -vt proc proc "$mnt/proc"
-	mount -vt sysfs sysfs "$mnt/sys"
-	# The chroot IS the target partition, so grub-install probes the target
-	# /boot directly and embeds its UUID search (no loop-device ambiguity).
-	chroot "$mnt" grub-install --target=i386-pc --boot-directory=/boot "$DISK"
-	umount "$mnt/dev" "$mnt/proc" "$mnt/sys" 2>/dev/null || true
-
-	# grub-install writes the 440-byte boot code and must keep the MBR disk
-	# id (the PARTUUID source). Catch it if that ever changes.
-	local nowuuid
-	nowuuid=$(blkid -s PARTUUID -o value "$part" || true)
-	[ "$nowuuid" = "$partuuid" ] ||
-		die "PARTUUID changed during grub-install ($partuuid -> $nowuuid)"
-
-	log "writing grub.cfg (serial + VGA console, PARTUUID root)"
-	mkdir -pv "$mnt/boot/grub"
-	cat > "$mnt/boot/grub/grub.cfg" <<GRUBCFG
+	# grub.cfg shared by both firmwares: BIOS reads it from /boot/grub,
+	# UEFI has the same text embedded in BOOTX64.EFI by grub-mkstandalone.
+	local grubcfg="$mnt/tmp/zignos-grub.cfg"
+	cat > "$grubcfg" <<GRUBCFG
 serial --unit=0 --speed=115200
 terminal_input serial console
 terminal_output serial console
 set timeout=5
 set default=0
+search --no-floppy --fs-uuid --set=root $rootuuid
 menuentry "ZIGNOS" {
-	linux /boot/vmlinuz root=PARTUUID=$partuuid console=tty0 console=ttyS0
+	linux /boot/vmlinuz root=UUID=$rootuuid console=tty0 console=ttyS0
+	initrd /boot/initramfs.img
 }
 GRUBCFG
+	mkdir -pv "$mnt/boot/grub"
+	cp "$grubcfg" "$mnt/boot/grub/grub.cfg"
+
+	log "installing GRUB ($([ "$UEFI" = 1 ] && echo UEFI || echo BIOS))"
+	mkdir -pv "$mnt"/{dev,proc,sys}
+	mount --bind /dev "$mnt/dev"
+	mount -vt proc proc "$mnt/proc"
+	mount -vt sysfs sysfs "$mnt/sys"
+	if [ "$UEFI" = 1 ]; then
+		# Removable path (/EFI/BOOT/BOOTX64.EFI): no NVRAM entry and no
+		# efibootmgr needed; firmware on any machine finds this file.
+		mkdir -p "$mnt/boot/efi/EFI/BOOT"
+		chroot "$mnt" grub-mkstandalone -O x86_64-efi \
+			-o /boot/efi/EFI/BOOT/BOOTX64.EFI \
+			--modules="part_gpt part_msdos fat ext2 normal search search_fs_uuid linux echo serial terminal" \
+			"boot/grub/grub.cfg=/tmp/zignos-grub.cfg"
+		echo "UEFI: wrote /boot/efi/EFI/BOOT/BOOTX64.EFI (firmware fallback path)"
+	else
+		# The chroot IS the target partition, so grub-install probes the
+		# target /boot directly and embeds its search (no loop ambiguity).
+		chroot "$mnt" grub-install --target=i386-pc --boot-directory=/boot "$DISK"
+	fi
+	umount "$mnt/dev" "$mnt/proc" "$mnt/sys" 2>/dev/null || true
+	rm -f "$grubcfg"
 
 	log "recreating runtime mount points in the image"
 	umount "$mnt/dev" "$mnt/proc" "$mnt/sys" 2>/dev/null || true
 	mkdir -pv "$mnt"/{dev,proc,sys,run,tmp} "$mnt/var/tmp" "$mnt/var/lib/seedrng"
 	chmod 1777 "$mnt/tmp" "$mnt/var/tmp"
 
+	if [ "$UEFI" = 1 ]; then
+		umount "$mnt/boot/efi"
+	fi
 	umount "$mnt"
 	rmdir "$mnt" 2>/dev/null || true
 

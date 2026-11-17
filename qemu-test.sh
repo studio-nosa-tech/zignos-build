@@ -8,6 +8,8 @@
 # Default: boot the partitioned image via its GRUB bootloader.
 # Set KERNEL=<bzImage> (plus IMG=/var/lfs.img) for direct kernel boot of
 # the bootstrap tree, like the M3 flow did.
+# Set UEFI=1 for a GPT/UEFI image: QEMU then boots OVMF (edk2) instead of
+# SeaBIOS. OVMF_CODE/OVMF_VARS can override the firmware paths.
 
 set -euo pipefail
 
@@ -15,6 +17,9 @@ IMG="${IMG:-$(pwd)/zignos-rootfs.img}"
 KERNEL="${KERNEL:-}"   # empty = boot via the image's GRUB
 MEM="${MEM:-1G}"
 SMP="${SMP:-2}"
+UEFI="${UEFI:-0}"
+OVMF_CODE="${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}"
+OVMF_VARS="${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
 MODE="${1:-run}"
 
 die() { echo "qemu-test: $*" >&2; exit 1; }
@@ -22,15 +27,22 @@ die() { echo "qemu-test: $*" >&2; exit 1; }
 qemu_cmd() {
 	local accel="tcg"
 	[ -w /dev/kvm ] && accel="kvm"
-	local kern_args=()
+	local kern_args=() fw_args=()
 	if [ -n "$KERNEL" ]; then
 		kern_args=(-kernel "$KERNEL" -append "root=/dev/vda console=ttyS0")
+	fi
+	if [ "$UEFI" = 1 ]; then
+		local vars="/var/tmp/zignos-OVMF_VARS.fd"
+		[ -f "$vars" ] || cp "$OVMF_VARS" "$vars"
+		fw_args=(-drive "if=pflash,format=raw,readonly=on,file=$OVMF_CODE"
+			-drive "if=pflash,format=raw,file=$vars")
 	fi
 	# User-mode NIC with an SSH port forward (host 127.0.0.1:$SSH_PORT ->
 	# guest 22) so dhcpcd/sshd can be exercised and the guest used remotely.
 	qemu-system-x86_64 \
 		-machine accel="$accel" \
 		-m "$MEM" -smp "$SMP" \
+		"${fw_args[@]}" \
 		-drive file="$IMG",format=raw,if=virtio \
 		-netdev "user,id=net0,hostfwd=tcp:127.0.0.1:${SSH_PORT:-2222}-:22" \
 		-device virtio-net-pci,netdev=net0 \
@@ -69,7 +81,8 @@ main() {
 			  echo 'echo ZIGNOS-BOOT-OK $(uname -r)'
 			  sleep 6
 			} \
-				| KERNEL="$KERNEL" IMG="$IMG" MEM="$MEM" SMP="$SMP" \
+				| KERNEL="$KERNEL" IMG="$IMG" MEM="$MEM" SMP="$SMP" UEFI="$UEFI" \
+				  OVMF_CODE="$OVMF_CODE" OVMF_VARS="$OVMF_VARS" \
 				timeout 200 bash -c "$(declare -f qemu_cmd)
 qemu_cmd" > "$out" 2>&1 || true
 			# Require the RESOLVED marker output (kernel version appended),

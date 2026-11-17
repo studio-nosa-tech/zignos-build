@@ -1,13 +1,19 @@
 #!/bin/bash
 # Build the ZIGNOS bootable disk image from the bootstrap result ($LFS).
 #
-# The image is produced WITHOUT loop-mounting it: the system is staged into
-# a plain directory and mke2fs -d populates the partition in one pass
-# (-E offset= writes at the partition offset). GRUB is installed by
-# hand-building core.img and dd'ing it into the MBR gap. This avoids the
-# loop/page-cache races that corrupted earlier images on the build VM.
+# The root filesystem is produced WITHOUT loop-mounting it: the system is
+# staged into a plain directory and mke2fs -d populates the partition in one
+# pass (-E offset= writes at the partition offset).
 #
-# Requires: linux and grub recipes installed into $LFS.
+#   UEFI=0 (default): MBR disk, one ext4 partition, BIOS GRUB core.img.
+#   UEFI=1:           GPT disk, ESP (FAT32) + ext4 root, removable-path
+#                     BOOTX64.EFI built with grub-mkstandalone.
+#
+# Both variants boot through the initramfs (/boot/initramfs.img) and use
+# root=UUID=..., so the image can be dd'd to any disk.
+#
+# Requires: linux (kernel + initramfs) and grub (BIOS + UEFI) installed into
+# $LFS. UEFI mode additionally requires mkfs.vfat and losetup on the host.
 
 set -euo pipefail
 
@@ -15,35 +21,18 @@ LFS="${LFS:-/mnt/lfs}"
 OUT="${OUT:-$(pwd)/zignos-rootfs.img}"
 SIZE="${SIZE:-12G}"
 FSLABEL="${FSLABEL:-zignos-root}"
-PART_START=2048   # sectors, 1 MiB alignment
-STAGE=""         # staging dir, cleaned by the EXIT trap
+UEFI="${UEFI:-0}"
+PART_START=2048       # sectors, 1 MiB alignment
+ESP_SECTORS=204800    # 100 MiB EFI system partition (UEFI mode)
+ROOT_START=$((PART_START + ESP_SECTORS))
+STAGE=""              # staging dir, cleaned by the EXIT trap
+ESP_IMG=""            # ESP image file (UEFI mode)
+ESP_MNT=""            # ESP mount point (UEFI mode)
+ESP_LOOP=""           # loop device backing the ESP image
 
 log() { printf '\n== %s\n' "$*"; }
 die() { printf 'make-image: %s\n' "$*" >&2; exit 1; }
 
-# unmount_vfs <lfs>: detach dev/proc/sys/run (and dev/pts) with retries and
-# a lazy fallback.
-unmount_vfs() {
-	local lfs="$1" v n=0
-	while [ "$n" -lt 5 ]; do
-		n=$((n + 1))
-		mountpoint -q "$lfs/dev/pts" && umount "$lfs/dev/pts" 2>/dev/null
-		for v in dev proc sys run; do
-			mountpoint -q "$lfs/$v" && umount "$lfs/$v" 2>/dev/null
-		done
-		if ! mountpoint -q "$lfs/proc" && ! mountpoint -q "$lfs/sys" &&
-		   ! mountpoint -q "$lfs/dev" && ! mountpoint -q "$lfs/run"; then
-			return 0
-		fi
-		sleep 1
-	done
-	mountpoint -q "$lfs/dev/pts" && umount -l "$lfs/dev/pts" 2>/dev/null
-	for v in dev proc sys run; do
-		mountpoint -q "$lfs/$v" && umount -l "$lfs/$v" 2>/dev/null
-	done
-	sleep 1
-	return 0
-}
 
 # merge_dir <src> <dst>: copy entries that are missing from dst. Used when
 # the source tree is not fully usr-merged: /usr wins for duplicates, and
@@ -72,12 +61,36 @@ main() {
 
 	STAGE=$(mktemp -d /var/tmp/zignos-stage.XXXXXX)
 	# shellcheck disable=SC2154  # rc is assigned by the trap itself
-	trap 'rc=$?; rm -rf "${STAGE:-}"; exit $rc' EXIT
+	cleanup() {
+		rc=$?
+		if [ -n "${ESP_MNT:-}" ] && mountpoint -q "$ESP_MNT"; then
+			umount "$ESP_MNT" 2>/dev/null || true
+		fi
+		if [ -n "${ESP_LOOP:-}" ]; then
+			losetup -d "$ESP_LOOP" 2>/dev/null || true
+		fi
+		[ -n "${ESP_MNT:-}" ] && rmdir "$ESP_MNT" 2>/dev/null
+		[ -n "${ESP_IMG:-}" ] && rm -f "$ESP_IMG"
+		rm -rf "${STAGE:-}"
+		exit $rc
+	}
+	trap cleanup EXIT
+
+	[ -f "$LFS/boot/initramfs.img" ] ||
+		die "no initramfs in $LFS/boot - rebuild the linux recipe (initramfs)"
+	ROOTUUID=$(cat /proc/sys/kernel/random/uuid)
+	[ -n "$ROOTUUID" ] || die "could not generate a root filesystem UUID"
 
 	log "staging the system into $STAGE"
-	unmount_vfs "$LFS"
+	# Do NOT unmount $LFS/dev, /proc, /sys or /run: $LFS/dev is usually a
+	# bind mount of the host /dev, and unmounting $LFS/dev/pts there also
+	# detaches the HOST's devpts (this broke sshd on the build VM twice).
+	# The tar excludes below drop those directories; the staging tree
+	# recreates the mount points.
 	for v in dev proc sys run; do
-		mountpoint -q "$LFS/$v" && die "$LFS/$v is still mounted - refusing to copy"
+		if mountpoint -q "$LFS/$v"; then
+			echo "make-image: note: $LFS/$v is mounted; it is excluded from the copy"
+		fi
 	done
 	tar -C "$LFS" \
 		--exclude='sources' \
@@ -117,12 +130,12 @@ main() {
 	ln -sfn /usr/sbin/openrc-init "$STAGE/sbin/init"
 	ln -sfn /usr/sbin/openrc-init "$STAGE/usr/sbin/init"
 
-	# Root is mounted read-only by the kernel before OpenRC starts, so a
-	# boot-time fsck cannot run (no initramfs by design): pass 0 tells the
-	# fsck service to leave it alone. Run e2fsck from a rescue system.
-	cat > "$STAGE/etc/fstab" <<'FSTAB'
-# ZIGNOS filesystem table (images: virtio root, no initramfs)
-/dev/vda1  /     ext4  defaults  0 0
+	# The initramfs mounts root read-only by UUID, then OpenRC remounts it
+	# rw. A boot-time fsck still cannot run on a busy root: pass 0 keeps the
+	# fsck service away; run e2fsck from a rescue system.
+	cat > "$STAGE/etc/fstab" <<FSTAB
+# ZIGNOS filesystem table (root is mounted by the initramfs)
+UUID=$ROOTUUID  /     ext4  defaults  0 0
 proc       /proc proc  defaults  0 0
 sysfs      /sys  sysfs defaults  0 0
 FSTAB
@@ -146,46 +159,110 @@ FSTAB
 		install -m 755 "$self_dir/zignos-install.sh" "$STAGE/usr/sbin/zignos-install"
 	fi
 
-	log "installing kernel and GRUB payload into the staging tree"
+	log "installing kernel and initramfs into the staging tree"
 	cp -a "$LFS"/boot/vmlinuz* "$STAGE/boot/"
+	cp -a "$LFS/boot/initramfs.img" "$STAGE/boot/initramfs.img"
+	# BIOS GRUB loads extra modules from the prefix; copy them into /boot.
 	mkdir -pv "$STAGE/boot/grub/i386-pc"
 	cp -a "$LFS"/usr/lib/grub/i386-pc/*.mod "$STAGE/boot/grub/i386-pc/"
 	cp -a "$LFS"/usr/lib/grub/i386-pc/*.lst "$STAGE/boot/grub/i386-pc/" 2>/dev/null || true
 
-	log "creating $OUT ($SIZE, MBR, one bootable ext4 partition)"
-	rm -f "$OUT"
-	truncate -s "$SIZE" "$OUT"
-	sfdisk "$OUT" <<'SFDISK'
-label: dos
-start=2048, type=83, bootable
-SFDISK
-
-	# root=PARTUUID instead of /dev/vda1: the same image must boot when it is
-	# dd'd to a USB stick, a SATA disk or an NVMe drive. PARTUUID is stable
-	# across sdX/vdX/nvme naming and is copied along with the MBR disk id.
-	partuuid=$(blkid -p -O $((PART_START * 512)) -s PARTUUID -o value "$OUT" 2>/dev/null || true)
-	if [ -z "$partuuid" ]; then
-		diskid=$(sfdisk --disk-id "$OUT")
-		partuuid="${diskid#0x}-01"
-	fi
-	[ -n "$partuuid" ] || die "could not determine the image PARTUUID"
-	echo "PARTUUID=$partuuid"
-
 	# Both consoles: laptops/desktops use tty0, servers (and the QEMU test)
 	# use ttyS0. The last console= is /dev/console, so keep ttyS0 last.
+	# root=UUID works for both BIOS and UEFI images and survives dd to any
+	# disk; the initramfs resolves it (busybox blkid).
+	GRUB_ENTRY="menuentry \"ZIGNOS\" {
+	linux /boot/vmlinuz root=UUID=$ROOTUUID console=tty0 console=ttyS0
+	initrd /boot/initramfs.img
+}"
 	cat > "$STAGE/boot/grub/grub.cfg" <<GRUBCFG
 serial --unit=0 --speed=115200
 terminal_input serial console
 terminal_output serial console
 set timeout=2
 set default=0
-menuentry "ZIGNOS" {
-	linux /boot/vmlinuz root=PARTUUID=$partuuid console=tty0 console=ttyS0
-}
+search --no-floppy --fs-uuid --set=root $ROOTUUID
+$GRUB_ENTRY
 GRUBCFG
 
+	if [ "$UEFI" = 1 ]; then
+		command -v mkfs.vfat >/dev/null 2>&1 ||
+			die "UEFI mode needs mkfs.vfat (dosfstools) on the host"
+		log "creating $OUT ($SIZE, GPT: 100MiB ESP + ext4 root)"
+		rm -f "$OUT"
+		truncate -s "$SIZE" "$OUT"
+		# The GPT backup header/entries live in the last 34 sectors. Size
+		# the root partition (and therefore the ext4 filesystem) to end
+		# before them, otherwise mke2fs creates a filesystem larger than
+		# the partition ("bad geometry ... exceeds size of device").
+		local total_sectors root_sectors root_blocks
+		total_sectors=$(( $(stat -c %s "$OUT") / 512 ))
+		root_sectors=$(( ((total_sectors - ROOT_START - 34) / 8) * 8 ))
+		root_blocks=$(( root_sectors / 8 ))
+		[ "$root_blocks" -gt 0 ] || die "image is too small for a GPT root partition"
+		sfdisk "$OUT" <<SFDISK
+label: gpt
+start=$PART_START, size=$ESP_SECTORS, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="ZIGNOS ESP"
+start=$ROOT_START, size=$root_sectors, type=0FC63DAF-8483-4772-8E79-3D69D8477DE4, name="zignos-root"
+SFDISK
+
+		# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed.
+		# -b 4096 makes the trailing block count 4K units (mke2fs otherwise
+		# treats an explicit size as 1KiB blocks and makes a 1/4-size fs).
+		mke2fs -q -t ext4 -b 4096 -F -L "$FSLABEL" -U "$ROOTUUID" \
+			-O ^orphan_file,^metadata_csum_seed \
+			-d "$STAGE" -E offset=$((ROOT_START * 512)) "$OUT" "$root_blocks"
+
+		log "building the EFI bootloader (grub-mkstandalone)"
+		cat > "$LFS/tmp/zignos-uefi-grub.cfg" <<GRUBCFG
+serial --unit=0 --speed=115200
+terminal_input serial console
+terminal_output serial console
+set timeout=2
+set default=0
+search --no-floppy --fs-uuid --set=root $ROOTUUID
+$GRUB_ENTRY
+GRUBCFG
+		chroot "$LFS" grub-mkstandalone -O x86_64-efi \
+			-o /tmp/BOOTX64.EFI \
+			--modules="part_gpt part_msdos fat ext2 normal search search_fs_uuid linux echo serial terminal" \
+			"boot/grub/grub.cfg=/tmp/zignos-uefi-grub.cfg"
+
+		log "populating the EFI system partition"
+		ESP_IMG=$(mktemp /var/tmp/zignos-esp.XXXXXX)
+		truncate -s $((ESP_SECTORS * 512)) "$ESP_IMG"
+		mkfs.vfat -F32 -n ZIGNOSESP "$ESP_IMG" >/dev/null
+		ESP_MNT=$(mktemp -d /var/tmp/zignos-esp-mnt.XXXXXX)
+		ESP_LOOP=$(losetup -f --show "$ESP_IMG")
+		mount -t vfat "$ESP_LOOP" "$ESP_MNT"
+		mkdir -p "$ESP_MNT/EFI/BOOT"
+		cp "$LFS/tmp/BOOTX64.EFI" "$ESP_MNT/EFI/BOOT/BOOTX64.EFI"
+		# The firmware fallback path is enough; no NVRAM entry is written.
+		sync
+		umount "$ESP_MNT"
+		losetup -d "$ESP_LOOP"
+		ESP_LOOP=""
+		rmdir "$ESP_MNT"
+		ESP_MNT=""
+		dd if="$ESP_IMG" of="$OUT" bs=512 seek=$PART_START conv=notrunc status=none
+		rm -f "$ESP_IMG"
+		ESP_IMG=""
+		rm -f "$LFS/tmp/BOOTX64.EFI" "$LFS/tmp/zignos-uefi-grub.cfg"
+
+		log "done: $OUT (bootable: UEFI -> BOOTX64.EFI -> kernel + initramfs -> OpenRC)"
+		return 0
+	fi
+
+	log "creating $OUT ($SIZE, MBR, one bootable ext4 partition)"
+	rm -f "$OUT"
+	truncate -s "$SIZE" "$OUT"
+	sfdisk "$OUT" <<SFDISK
+label: dos
+start=$PART_START, type=83, bootable
+SFDISK
+
 	# GRUB 2.14 can't read ext4 with orphan_file/metadata_csum_seed.
-	mke2fs -q -t ext4 -F -L "$FSLABEL" \
+	mke2fs -q -t ext4 -F -L "$FSLABEL" -U "$ROOTUUID" \
 		-O ^orphan_file,^metadata_csum_seed \
 		-d "$STAGE" -E offset=$((PART_START * 512)) "$OUT"
 
@@ -193,19 +270,14 @@ GRUBCFG
 	chroot "$LFS" grub-mkimage -O i386-pc -d /usr/lib/grub/i386-pc \
 		-o /usr/lib/grub/i386-pc/core-zignos.img \
 		-p '(hd0,msdos1)/boot/grub' \
-		biosdisk part_msdos ext2 normal linux echo serial terminal test
+		biosdisk part_msdos ext2 normal linux echo serial terminal test \
+		search search_fs_uuid
 	# 440 bytes = the boot code only. 446 would also overwrite the MBR disk
-	# signature at offset 440, which is the source of the PARTUUID that
-	# root= uses; GRUB's boot.img has zeros there.
+	# signature at offset 440; GRUB's boot.img has zeros there.
 	dd if="$LFS/usr/lib/grub/i386-pc/boot.img" of="$OUT" bs=440 count=1 conv=notrunc status=none
 	dd if="$LFS/usr/lib/grub/i386-pc/core-zignos.img" of="$OUT" seek=1 bs=512 conv=notrunc status=none
 
-	# The grub.cfg root=PARTUUID and the MBR disk id must still agree.
-	diskid=$(sfdisk --disk-id "$OUT")
-	[ "${diskid#0x}-01" = "$partuuid" ] ||
-		die "MBR disk id $diskid does not match PARTUUID $partuuid"
-
-	log "done: $OUT (bootable: BIOS -> GRUB -> kernel -> OpenRC)"
+	log "done: $OUT (bootable: BIOS -> GRUB -> kernel + initramfs -> OpenRC)"
 }
 
 main "$@"

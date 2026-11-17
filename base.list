@@ -76,6 +76,11 @@ kbd
 inetutils
 shadow
 ca-certificates
+# kernel modules (modprobe/depmod) and the initramfs generator
+kmod
+initramfs
+# mkfs.vfat for the UEFI system partition (installer)
+dosfstools
 
 # init and boot
 openrc
