@@ -194,8 +194,16 @@ GRUBCFG
 		-o /usr/lib/grub/i386-pc/core-zignos.img \
 		-p '(hd0,msdos1)/boot/grub' \
 		biosdisk part_msdos ext2 normal linux echo serial terminal test
-	dd if="$LFS/usr/lib/grub/i386-pc/boot.img" of="$OUT" bs=446 count=1 conv=notrunc status=none
+	# 440 bytes = the boot code only. 446 would also overwrite the MBR disk
+	# signature at offset 440, which is the source of the PARTUUID that
+	# root= uses; GRUB's boot.img has zeros there.
+	dd if="$LFS/usr/lib/grub/i386-pc/boot.img" of="$OUT" bs=440 count=1 conv=notrunc status=none
 	dd if="$LFS/usr/lib/grub/i386-pc/core-zignos.img" of="$OUT" seek=1 bs=512 conv=notrunc status=none
+
+	# The grub.cfg root=PARTUUID and the MBR disk id must still agree.
+	diskid=$(sfdisk --disk-id "$OUT")
+	[ "${diskid#0x}-01" = "$partuuid" ] ||
+		die "MBR disk id $diskid does not match PARTUUID $partuuid"
 
 	log "done: $OUT (bootable: BIOS -> GRUB -> kernel -> OpenRC)"
 }
