@@ -45,6 +45,8 @@ util-linux
 shadow
 e2fsprogs
 kbd
+# time zone data (zic/zoneinfo); /etc/localtime defaults to UTC
+tzdata
 
 # kernel and bootloader (kmod and initramfs come in through linux)
 linux
