@@ -10,6 +10,15 @@
 
 set -euo pipefail
 
+# bubblewrap (used by zpkg build) needs a mount namespace where pivot_root
+# works. Enter the chroot from a private mount namespace so builds inside it
+# can be sandboxed; without this a plain chroot is not pivot_root-able.
+if [ "${ZIGNOS_ENTER_UNSHARED:-}" != 1 ] && command -v unshare >/dev/null 2>&1 &&
+	unshare --mount --propagation private -- true 2>/dev/null; then
+	export ZIGNOS_ENTER_UNSHARED=1
+	exec unshare --mount --propagation private -- "$0" "$@"
+fi
+
 ROOT="${1:?usage: zignos-enter.sh <root> [command...]}"
 shift || true
 
@@ -19,6 +28,13 @@ die() { printf 'zignos-enter: %s\n' "$*" >&2; exit 1; }
 ROOT=$(cd "$ROOT" && pwd)
 [ -x "$ROOT/usr/bin/bash" ] || die "$ROOT has no /usr/bin/bash"
 [ -f "$ROOT/etc/zignos-release" ] || die "$ROOT is not a ZIGNOS tree"
+
+# bubblewrap's pivot_root requires the chroot root to be a mount point. An
+# unpacked stage3 is just a directory; make it one inside the private mount
+# namespace created above (never in the host namespace).
+if [ "${ZIGNOS_ENTER_UNSHARED:-}" = 1 ] && ! mountpoint -q "$ROOT"; then
+	mount --bind "$ROOT" "$ROOT"
+fi
 
 # Refuse to start on top of a previous interrupted run: a host /dev or
 # /proc left mounted under $ROOT is how a later `rm -rf $ROOT` can destroy

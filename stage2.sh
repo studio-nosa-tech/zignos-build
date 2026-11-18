@@ -13,6 +13,10 @@
 
 set -euo pipefail
 
+# bubblewrap is not available until base.list has been built, so bootstrap
+# runs without the build sandbox. The installed system uses it by default.
+export ZPKG_SANDBOX=off
+
 log() { printf '\n== %s\n' "$*"; }
 
 log "stage2 phase 1: bootstrap core (hardcoded, pre-zpkg)"

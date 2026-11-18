@@ -9,14 +9,14 @@ ZIGNOS の bootstrap・イメージ/ stage3 作成・起動テストのスクリ
 | `bootstrap.sh` | オーケストレータ(ソース取得 → lfs ユーザ → chroot → stage 実行) | build VM 上で root |
 | `stage0.sh` | LFS ch4/ch5/ch6: cross toolchain + 一時ツール | lfs ユーザ(bootstrap.sh が呼ぶ) |
 | `stage1.sh` | LFS ch7: chroot 準備・essential files・追加一時ツール + Go bootstrap スキャフォールド | chroot 内(bootstrap.sh が呼ぶ) |
-| `stage2.sh` | zpkg による最終システム構築(glibc → gcc → … → zpkg 自家ホスト) | chroot 内(bootstrap.sh が呼ぶ) |
-| `base.list` | ベースシステムの唯一の定義(**トップレベル 36 個**。依存込みで 59) | - |
+| `stage2.sh` | zpkg による最終システム構築(glibc → gcc → … → zpkg 自家ホスト)。bootstrap 中は `ZPKG_SANDBOX=off` | chroot 内(bootstrap.sh が呼ぶ) |
+| `base.list` | ベースシステムの唯一の定義(**トップレベル 37 個**。依存込みで 60) | - |
 | `build-system.sh` | base.list をルートへ冪等適用(ローリング更新の主力) | ホスト or chroot |
 | `make-image.sh` | 起動可能イメージ(BIOS/MBR、`UEFI=1` で GPT+ESP) | build VM 上で root |
 | `make-seed.sh` | 実行中システムのフル seed tarball(開発者向け) | root |
-| `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 53 パッケージ)。chroot して `zpkg install linux grub` で完成 | root |
+| `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 54 パッケージ)。chroot して `zpkg install linux grub` で完成 | root |
 | `zignos-install.sh` | 実行中システムを別ディスクへインストール(BIOS/UEFI 自動判定、efibootmgr があれば NVRAM 登録) | 実行中 ZIGNOS 内で root |
-| `zignos-enter.sh` | 展開先に vfs をマウントして chroot(seed/stage3 用) | root |
+| `zignos-enter.sh` | private mount namespace で展開先に vfs をマウントして chroot(seed/stage3 用)。bwrap の pivot_root が動く | root |
 | `qemu-test.sh` | QEMU 起動チェック(`check`。`UEFI=1` で OVMF) | build VM 上 |
 
 参照手順: LFS 13.1-systemd(`stage0/1.sh` は書籍に忠実、`stage2.sh` は zpkg レシピに翻訳)。意図的な差分は `bootstrap.sh` のヘッダーコメントを参照。

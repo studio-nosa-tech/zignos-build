@@ -61,6 +61,8 @@ grub
 # package manager and TLS trust for source downloads
 zpkg
 ca-certificates
+# build sandbox used by zpkg to isolate recipe build scripts
+bubblewrap
 
 # mkfs.vfat for the UEFI system partition (used by zignos-install)
 dosfstools
