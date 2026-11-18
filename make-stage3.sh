@@ -156,6 +156,7 @@ main() {
 	rm -rf "$WORK/root/.cache" "$WORK/root/.config/go" "$WORK/root/go"
 	rm -f "$WORK"/root/.bash_history "$WORK"/root/.ssh/authorized_keys
 	rm -rf "$WORK/var/lib/zpkg/.txn"
+	rm -f "$WORK/var/lib/zpkg/.security.json"
 	rm -rf "${WORK:?}"/boot/*
 	mkdir -p "$WORK"/{tmp,var/tmp,run,var/log,var/lib/seedrng,boot}
 	chmod 1777 "$WORK/tmp" "$WORK/var/tmp"
