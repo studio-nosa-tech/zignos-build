@@ -36,6 +36,10 @@ m4
 patch
 file
 pkgconf
+# hostname/ifconfig (inetutils) and sysctl (procps) are used by the OpenRC
+# hostname/loopback/sysctl boot services.
+inetutils
+procps
 
 # init, device nodes and the login path
 busybox
