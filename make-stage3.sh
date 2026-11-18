@@ -102,12 +102,16 @@ main() {
 		/usr/bin/zpkg depends $names | tr '\n' ' ')
 	[ -n "$allowed" ] || die "cannot resolve the base package closure"
 
+	# Remove the kernel and bootloader first: packages they depend on (bc,
+	# elfutils, initramfs, efibootmgr, ...) are "extras" from the stage3
+	# point of view, and zpkg refuses to remove a package that a still-
+	# installed package depends on.
+	chroot "$WORK" /usr/bin/zpkg remove linux grub
+
 	local installed extra p
 	installed=$(chroot "$WORK" /usr/bin/zpkg list | awk '{print $1}')
 	extra=""
 	for p in $installed; do
-		# linux/grub are removed explicitly below.
-		case "$p" in linux|grub) continue ;; esac
 		case " $allowed " in
 			*" $p "*) ;;
 			*) extra="$extra $p" ;;
@@ -118,7 +122,6 @@ main() {
 		# shellcheck disable=SC2086
 		chroot "$WORK" /usr/bin/zpkg remove $extra
 	fi
-	chroot "$WORK" /usr/bin/zpkg remove linux grub
 
 	# make-image runs grub-mkimage inside the bootstrap tree, so an unowned
 	# core.img can be left in /usr/lib/grub after the package is removed.
