@@ -41,6 +41,8 @@ pkgconf
 busybox
 openrc
 initscripts
+# eudev replaces busybox mdev; kmod/libblkid come in as dependencies
+eudev
 util-linux
 shadow
 e2fsprogs
