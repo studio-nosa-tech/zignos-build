@@ -17,8 +17,16 @@ set -euo pipefail
 
 ZIGNOS_ROOT="${ZIGNOS_ROOT:-/mnt}"
 CHANNEL="${CHANNEL:-stable}"
-OUT="${OUT:-$(pwd)/zignos-stage3-$(date +%Y%m%d)-x86_64.tar.xz}"
 DIR=$(cd "$(dirname "$0")" && pwd)
+# shellcheck source=release.conf
+# shellcheck disable=SC1091
+[ -f "$DIR/release.conf" ] && . "$DIR/release.conf"
+RELEASE="${RELEASE:-$(date -u +%Y.%m.%d)-alpha}"
+STAGE3_REVISION="${STAGE3_REVISION:-0}"
+AVAILABILITY="${AVAILABILITY:-coming-soon}"
+REVISION="r$STAGE3_REVISION"
+ZIGNOS_DIR="${ZIGNOS_DIR:-$(cd "$DIR/.." && pwd)}"
+OUT="${OUT:-$(pwd)/zignos-stage3-$(date +%Y%m%d)-$REVISION-x86_64.tar.xz}"
 WORK=""
 VFS_MOUNTED=0
 
@@ -59,15 +67,17 @@ main() {
 	[ -x "$ZIGNOS_ROOT/usr/bin/zpkg" ] || die "$ZIGNOS_ROOT has no zpkg"
 	[ -x "$ZIGNOS_ROOT/usr/bin/bash" ] || die "$ZIGNOS_ROOT does not look like a ZIGNOS tree"
 	[ -f "$ZIGNOS_ROOT/etc/zignos-release" ] || die "$ZIGNOS_ROOT has no /etc/zignos-release"
+	command -v python3 >/dev/null 2>&1 || die "python3 is required for the release manifest"
 
 	# base.list names top-level packages only (Gentoo-style minimal base).
 	# The allowed set is their transitive closure — dependencies and build
 	# dependencies included — minus the kernel and bootloader, which are the
 	# user's job inside the chroot. The closure is resolved with the tree's
 	# own zpkg and recipe tree after the copy.
-	local names
-	names=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$DIR/base.list" |
-		grep -vxE 'linux|grub' | tr '\n' ' ')
+	local names all_names base_closure
+	all_names=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$DIR/base.list")
+	names=$(printf '%s\n' "$all_names" | grep -vxE 'linux|grub' | tr '\n' ' ')
+	all_names=$(printf '%s\n' "$all_names" | tr '\n' ' ')
 	[ -n "$names" ] || die "empty package list"
 
 	WORK=$(mktemp -d /var/tmp/zignos-stage3.XXXXXX)
@@ -116,6 +126,15 @@ EOF
 		ZPKG_REPOS="/usr/share/zignos/recipes/$CHANNEL/core:/usr/share/zignos/recipes/$CHANNEL/main:/usr/share/zignos/recipes/$CHANNEL/desktop" \
 		/usr/bin/zpkg depends $names | tr '\n' ' ')
 	[ -n "$allowed" ] || die "cannot resolve the base package closure"
+
+	# Full base closure including linux/grub, recorded in the release
+	# manifest. Best-effort: metadata must not fail the stage3 build.
+	# shellcheck disable=SC2086
+	base_closure=$(chroot "$WORK" /usr/bin/env \
+		ZPKG_CHANNEL="$CHANNEL" \
+		ZPKG_REPOS="/usr/share/zignos/recipes/$CHANNEL/core:/usr/share/zignos/recipes/$CHANNEL/main:/usr/share/zignos/recipes/$CHANNEL/desktop" \
+		/usr/bin/zpkg depends $all_names 2>/dev/null | wc -l) || base_closure=""
+	[ "${base_closure:-0}" -gt 0 ] 2>/dev/null || base_closure=""
 
 	# Remove the kernel and bootloader first: packages they depend on (bc,
 	# elfutils, initramfs, efibootmgr, ...) are "extras" from the stage3
@@ -216,7 +235,76 @@ EOF
 	tar -C "$WORK" -cf - . | xz -T0 -6 > "$OUT"
 	sha256sum "$OUT" > "$OUT.sha256"
 
+	# Release assets and the machine-readable manifest. The stage3 tarball
+	# cannot contain its own hash, so the manifest is a sidecar.
+	local outdir asset_date recipes_out zpkg_out zpkg_version
+	outdir=$(dirname "$OUT")
+	asset_date=$(date -u +%Y%m%d)
+	zpkg_version=$(cat "$WORK/var/lib/zpkg/zpkg/version" 2>/dev/null || true)
+	recipes_out="${RECIPES_OUT:-$outdir/zignos-recipes-$asset_date-$REVISION.tar.xz}"
+	zpkg_out="${ZPKG_OUT:-$outdir/zpkg-${zpkg_version:-unknown}-x86_64}"
+
+	local -a artifacts=()
+	if [ "${MAKE_ASSETS:-1}" = 1 ]; then
+		if [ -d "$ZIGNOS_ROOT/sources/zignos-recipes" ]; then
+			log "packing recipes $recipes_out"
+			local rtmp
+			rtmp=$(mktemp -d /var/tmp/zignos-recipes-release.XXXXXX)
+			mkdir -p "$rtmp/usr/share/zignos"
+			cp -a "$ZIGNOS_ROOT/sources/zignos-recipes" "$rtmp/usr/share/zignos/recipes"
+			rm -rf "$rtmp/usr/share/zignos/recipes/.git"
+			rm -f "$recipes_out"
+			tar -C "$rtmp" -cJf "$recipes_out" ./usr
+			rm -rf "$rtmp"
+			sha256sum "$recipes_out" > "$recipes_out.sha256"
+			artifacts+=(--artifact "recipes=$recipes_out")
+		else
+			log "warning: no $ZIGNOS_ROOT/sources/zignos-recipes; skipping recipes tarball"
+		fi
+		if [ -x "$WORK/usr/bin/zpkg" ]; then
+			cp "$WORK/usr/bin/zpkg" "$zpkg_out"
+			chmod 755 "$zpkg_out"
+			sha256sum "$zpkg_out" > "$zpkg_out.sha256"
+			artifacts+=(--artifact "zpkg=$zpkg_out")
+		fi
+	fi
+
+	log "writing release manifest"
+	local -a manifest_args=(
+		generate
+		--release "$RELEASE"
+		--revision "$REVISION"
+		--channel "$CHANNEL"
+		--availability "$AVAILABILITY"
+		--build-date "$(date -u +%Y-%m-%d)"
+		--stage3 "$OUT"
+		--db-root "$WORK/var/lib/zpkg"
+		--recipes "$ZIGNOS_ROOT/sources/zignos-recipes"
+		--base-list "$DIR/base.list"
+		--source-repo "zpkg=$ZIGNOS_ROOT/sources/zignos-zpkg"
+		--source-repo "recipes=$ZIGNOS_ROOT/sources/zignos-recipes"
+		--source-repo "zignos=$ZIGNOS_DIR/zignos"
+		--source-repo "build=$ZIGNOS_DIR/zignos-build"
+		--boot-tests "${BOOT_TESTS:-/var/tmp/zignos-boot-tests.json}"
+		--out "$OUT.release.json"
+	)
+	[ -n "${base_closure:-}" ] && manifest_args+=(--base-closure "$base_closure")
+	local -a commit_args=()
+	[ -n "${ZIGNOS_COMMIT:-}" ] && commit_args+=(--commit "zignos=$ZIGNOS_COMMIT")
+	[ -n "${ZPKG_COMMIT:-}" ] && commit_args+=(--commit "zpkg=$ZPKG_COMMIT")
+	[ -n "${RECIPES_COMMIT:-}" ] && commit_args+=(--commit "recipes=$RECIPES_COMMIT")
+	[ -n "${BUILD_COMMIT:-}" ] && commit_args+=(--commit "build=$BUILD_COMMIT")
+	if [ ${#commit_args[@]} -gt 0 ]; then
+		manifest_args+=("${commit_args[@]}")
+	fi
+	if [ ${#artifacts[@]} -gt 0 ]; then
+		manifest_args+=("${artifacts[@]}")
+	fi
+	python3 "$DIR/release-manifest.py" "${manifest_args[@]}"
+	sha256sum "$OUT.release.json" > "$OUT.release.json.sha256"
+
 	log "done: $OUT ($(du -h "$OUT" | cut -f1), $npkg packages)"
+	echo "Manifest: $OUT.release.json"
 	echo "Install: tar -xpf $OUT -C <target>"
 	echo "Enter:   zignos-enter.sh <target>"
 	echo "Then:    zpkg install linux grub"

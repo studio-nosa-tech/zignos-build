@@ -21,8 +21,21 @@ UEFI="${UEFI:-0}"
 OVMF_CODE="${OVMF_CODE:-/usr/share/OVMF/OVMF_CODE_4M.fd}"
 OVMF_VARS="${OVMF_VARS:-/usr/share/OVMF/OVMF_VARS_4M.fd}"
 MODE="${1:-run}"
+DIR=$(cd "$(dirname "$0")" && pwd)
+BOOT_RESULTS="${BOOT_RESULTS:-/var/tmp/zignos-boot-tests.json}"
+BOOT_MODE=$([ "$UEFI" = 1 ] && echo uefi || echo bios)
 
 die() { echo "qemu-test: $*" >&2; exit 1; }
+
+# Record the result for the release manifest. Missing python3 must not turn
+# a successful boot check into a failure.
+record_boot() {
+	local result=$1 kernel=$2 log=$3
+	command -v python3 >/dev/null 2>&1 || return 0
+	python3 "$DIR/release-manifest.py" record-boot \
+		--file "$BOOT_RESULTS" --mode "$BOOT_MODE" --result "$result" \
+		--kernel "$kernel" --image "$IMG" --log "$log" || true
+}
 
 qemu_cmd() {
 	local accel="tcg"
@@ -87,11 +100,15 @@ main() {
 qemu_cmd" > "$out" 2>&1 || true
 			# Require the RESOLVED marker output (kernel version appended),
 			# not just the echoed input line.
+			local kver=""
+			kver=$(grep -aoE "ZIGNOS-BOOT-OK [0-9]+\.[0-9][^[:space:]]*" "$out" | tail -1 | awk '{print $2}' || true)
 			if grep -qE "ZIGNOS-BOOT-OK [0-9]+\." "$out" && grep -q "OpenRC" "$out"; then
 				echo "BOOT CHECK PASSED"
 				grep -a "ZIGNOS-BOOT-OK" "$out"
+				record_boot passed "$kver" "$out"
 				exit 0
 			fi
+			record_boot failed "$kver" "$out"
 			die "boot check failed - see $out"
 			;;
 		*)
