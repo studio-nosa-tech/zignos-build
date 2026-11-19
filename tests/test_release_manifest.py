@@ -122,6 +122,21 @@ class ReleaseManifestTest(unittest.TestCase):
         self.assertEqual(data["boot"]["hardware"], "not-tested")
         self.assertIsNotNone(data["boot"]["checked"])
 
+    def test_legacy_database_entry(self) -> None:
+        # Databases written before schema 2 only have version (and maybe
+        # revision/slot) files; category comes from the recipe tree.
+        d = self.db / "legacy"
+        d.mkdir()
+        (d / "version").write_text("3.1\n", encoding="utf-8")
+        (d / "revision").write_text("2\n", encoding="utf-8")
+        self._recipe("stable", "main", "legacy", "3.1", 2)
+        out = self.generate()
+        data = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(data["stage3"]["package_count"], 4)
+        pkg = next(p for p in data["stage3"]["packages"] if p["name"] == "legacy")
+        self.assertEqual(pkg, {"name": "legacy", "version": "3.1",
+                               "revision": 2, "slot": "0", "category": "main"})
+
     def test_validate_rejects_count_mismatch(self) -> None:
         out = self.generate()
         data = json.loads(out.read_text(encoding="utf-8"))

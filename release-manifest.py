@@ -69,6 +69,7 @@ def write_json(path: Path, data: dict) -> None:
             f.write("\n")
             f.flush()
             os.fsync(f.fileno())
+        os.chmod(tmp, 0o644)
         os.replace(tmp, path)
     except BaseException:
         try:
@@ -102,36 +103,57 @@ def recipe_version(recipes: Path, channel: str, category: str, name: str) -> dic
     return {"package": name, "version": version, "revision": revision}
 
 
-def package_category(meta: dict) -> str:
+def package_category(meta: dict, recipes: Path, channel: str, name: str) -> str:
     repo = (meta.get("repo") or "").rstrip("/")
     base = os.path.basename(repo)
-    return base if base in CATEGORIES else ""
+    if base in CATEGORIES:
+        return base
+    # Databases written before schema 2 have no meta.json. Look the package
+    # up in the channel tree instead.
+    for cat in CATEGORIES:
+        if (recipes / channel / cat / name).is_dir():
+            return cat
+    return ""
 
 
-def read_packages(db_root: Path) -> list[dict]:
+def read_packages(db_root: Path, recipes: Path, channel: str) -> list[dict]:
     packages = []
     if not db_root.is_dir():
         return packages
     for entry in sorted(db_root.iterdir()):
         if not entry.is_dir() or entry.name.startswith("."):
             continue
+        meta = {}
         meta_path = entry / "meta.json"
-        if not meta_path.is_file():
+        if meta_path.is_file():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                meta = {}
+        name = meta.get("name") or entry.name
+        version = str(meta.get("version", "") or "")
+        if not version:
+            version = read_kv_file(entry / "version").get("value", "")
+        # A directory without a version is not an installed package.
+        if not version:
             continue
-        try:
-            meta = json.loads(meta_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        name = meta.get("name")
-        if not name:
-            continue
+        revision = meta.get("revision")
+        if revision is None:
+            raw = read_kv_file(entry / "revision").get("value", "0")
+            try:
+                revision = int(raw)
+            except ValueError:
+                revision = 0
+        slot = str(meta.get("slot", "") or "")
+        if not slot:
+            slot = read_kv_file(entry / "slot").get("value", "0")
         pkg = {
             "name": name,
-            "version": str(meta.get("version", "")),
-            "revision": int(meta.get("revision", 0) or 0),
-            "slot": str(meta.get("slot", "0") or "0"),
+            "version": version,
+            "revision": int(revision or 0),
+            "slot": slot,
         }
-        cat = package_category(meta)
+        cat = package_category(meta, recipes, channel, name)
         if cat:
             pkg["category"] = cat
         packages.append(pkg)
@@ -235,7 +257,7 @@ def generate(args: argparse.Namespace) -> dict:
         raise SystemExit(f"recipes not found: {recipes}")
 
     stage_info = file_info(stage3)
-    packages = read_packages(db_root)
+    packages = read_packages(db_root, recipes, args.channel)
     channels, per_channel, total = count_recipes(recipes)
 
     zpkg_ver = ""
