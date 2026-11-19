@@ -33,6 +33,12 @@ VFS_MOUNTED=0
 log() { printf '\n== %s\n' "$*"; }
 die() { printf 'make-stage3: %s\n' "$*" >&2; exit 1; }
 
+# Portable checksum file: "hash  name", no absolute build path.
+write_sha256() {
+	local f=$1
+	(cd "$(dirname "$f")" && sha256sum "$(basename "$f")") > "$f.sha256"
+}
+
 case "$CHANNEL" in
 	stable|testing|unstable) ;;
 	*) die "invalid CHANNEL=$CHANNEL (use stable, testing or unstable)" ;;
@@ -109,6 +115,9 @@ main() {
 	# zpkg can find it (and so testing/unstable can be added by sync later).
 	[ -d "$ZIGNOS_ROOT/sources/zignos-recipes/$CHANNEL/core" ] ||
 		die "channel $CHANNEL not found under $ZIGNOS_ROOT/sources/zignos-recipes"
+	# Replace the copy inherited from the bootstrap root: cp -a into an
+	# existing directory would nest the channel (stable/stable).
+	rm -rf "$WORK/usr/share/zignos/recipes"
 	mkdir -p "$WORK/usr/share/zignos/recipes"
 	cp -a "$ZIGNOS_ROOT/sources/zignos-recipes/$CHANNEL" "$WORK/usr/share/zignos/recipes/$CHANNEL"
 	rm -rf "$WORK/usr/share/zignos/recipes/$CHANNEL/.git"
@@ -233,7 +242,7 @@ EOF
 	log "packing $OUT"
 	rm -f "$OUT"
 	tar -C "$WORK" -cf - . | xz -T0 -6 > "$OUT"
-	sha256sum "$OUT" > "$OUT.sha256"
+	write_sha256 "$OUT"
 
 	# Release assets and the machine-readable manifest. The stage3 tarball
 	# cannot contain its own hash, so the manifest is a sidecar.
@@ -256,7 +265,7 @@ EOF
 			rm -f "$recipes_out"
 			tar -C "$rtmp" -cJf "$recipes_out" ./usr
 			rm -rf "$rtmp"
-			sha256sum "$recipes_out" > "$recipes_out.sha256"
+			write_sha256 "$recipes_out"
 			artifacts+=(--artifact "recipes=$recipes_out")
 		else
 			log "warning: no $ZIGNOS_ROOT/sources/zignos-recipes; skipping recipes tarball"
@@ -264,7 +273,7 @@ EOF
 		if [ -x "$WORK/usr/bin/zpkg" ]; then
 			cp "$WORK/usr/bin/zpkg" "$zpkg_out"
 			chmod 755 "$zpkg_out"
-			sha256sum "$zpkg_out" > "$zpkg_out.sha256"
+			write_sha256 "$zpkg_out"
 			artifacts+=(--artifact "zpkg=$zpkg_out")
 		fi
 	fi
@@ -301,7 +310,7 @@ EOF
 		manifest_args+=("${artifacts[@]}")
 	fi
 	python3 "$DIR/release-manifest.py" "${manifest_args[@]}"
-	sha256sum "$OUT.release.json" > "$OUT.release.json.sha256"
+	write_sha256 "$OUT.release.json"
 
 	log "done: $OUT ($(du -h "$OUT" | cut -f1), $npkg packages)"
 	echo "Manifest: $OUT.release.json"
