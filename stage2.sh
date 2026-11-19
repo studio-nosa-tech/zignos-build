@@ -19,9 +19,16 @@ export ZPKG_SANDBOX=off
 
 log() { printf '\n== %s\n' "$*"; }
 
-log "stage2 phase 1: bootstrap core (hardcoded, pre-zpkg)"
+CHANNEL="${CHANNEL:-stable}"
+case "$CHANNEL" in
+	stable|testing|unstable) ;;
+	*) printf 'stage2: invalid CHANNEL=%s\n' "$CHANNEL" >&2; exit 1 ;;
+esac
+
+log "stage2 phase 1: bootstrap core (hardcoded, pre-zpkg) [$CHANNEL]"
 export ZPKG_ROOT=/
-export ZPKG_REPOS=/sources/zignos-recipes/core:/sources/zignos-recipes/main
+export ZPKG_CHANNEL="$CHANNEL"
+export ZPKG_REPOS="/sources/zignos-recipes/$CHANNEL/core:/sources/zignos-recipes/$CHANNEL/main"
 
 zpkg install \
 	glibc \

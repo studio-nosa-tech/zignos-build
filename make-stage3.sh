@@ -16,6 +16,7 @@
 set -euo pipefail
 
 ZIGNOS_ROOT="${ZIGNOS_ROOT:-/mnt}"
+CHANNEL="${CHANNEL:-stable}"
 OUT="${OUT:-$(pwd)/zignos-stage3-$(date +%Y%m%d)-x86_64.tar.xz}"
 DIR=$(cd "$(dirname "$0")" && pwd)
 WORK=""
@@ -23,6 +24,11 @@ VFS_MOUNTED=0
 
 log() { printf '\n== %s\n' "$*"; }
 die() { printf 'make-stage3: %s\n' "$*" >&2; exit 1; }
+
+case "$CHANNEL" in
+	stable|testing|unstable) ;;
+	*) die "invalid CHANNEL=$CHANNEL (use stable, testing or unstable)" ;;
+esac
 
 # merge_dir <src> <dst>: copy entries missing from dst (usr wins).
 merge_dir() {
@@ -89,16 +95,25 @@ main() {
 	mount -t sysfs sysfs "$WORK/sys"
 	VFS_MOUNTED=1
 
-	# The recipe tree is shipped in the tarball anyway; put it in place now
-	# so the closure can be resolved inside the copy.
-	mkdir -p "$WORK/usr/share/zignos"
-	cp -a "$ZIGNOS_ROOT/sources/zignos-recipes" "$WORK/usr/share/zignos/recipes"
-	rm -rf "$WORK/usr/share/zignos/recipes/.git"
+	# Ship only the selected channel, but keep the channel directory so
+	# zpkg can find it (and so testing/unstable can be added by sync later).
+	[ -d "$ZIGNOS_ROOT/sources/zignos-recipes/$CHANNEL/core" ] ||
+		die "channel $CHANNEL not found under $ZIGNOS_ROOT/sources/zignos-recipes"
+	mkdir -p "$WORK/usr/share/zignos/recipes"
+	cp -a "$ZIGNOS_ROOT/sources/zignos-recipes/$CHANNEL" "$WORK/usr/share/zignos/recipes/$CHANNEL"
+	rm -rf "$WORK/usr/share/zignos/recipes/$CHANNEL/.git"
+	mkdir -p "$WORK/etc/zpkg"
+	cat > "$WORK/etc/zpkg/make.conf" <<EOF
+# zpkg build options
+# Release channel: stable, testing or unstable.
+CHANNEL=$CHANNEL
+EOF
 	local allowed
 	# $names is intentionally unquoted: one argument per package.
 	# shellcheck disable=SC2086
 	allowed=$(chroot "$WORK" /usr/bin/env \
-		ZPKG_REPOS=/usr/share/zignos/recipes/core:/usr/share/zignos/recipes/main:/usr/share/zignos/recipes/desktop \
+		ZPKG_CHANNEL="$CHANNEL" \
+		ZPKG_REPOS="/usr/share/zignos/recipes/$CHANNEL/core:/usr/share/zignos/recipes/$CHANNEL/main:/usr/share/zignos/recipes/$CHANNEL/desktop" \
 		/usr/bin/zpkg depends $names | tr '\n' ' ')
 	[ -n "$allowed" ] || die "cannot resolve the base package closure"
 
@@ -186,6 +201,7 @@ built: $(date -u +%Y-%m-%d)
 packages: $npkg
 kernel: not installed — run 'zpkg install linux grub' inside the chroot
 recipes: /usr/share/zignos/recipes
+channel: $CHANNEL
 EOF
 
 	# No kernel, modules or bootloader files must have survived.

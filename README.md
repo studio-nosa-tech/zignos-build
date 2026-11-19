@@ -1,6 +1,8 @@
 # zignos-build
 
 ZIGNOS の bootstrap・イメージ/ stage3 作成・起動テストのスクリプト群。
+レシピツリーは `stable` / `testing` / `unstable` の3チャンネルを持ち、
+ビルドスクリプトは `CHANNEL`(既定 `stable`)で使用チャンネルを選ぶ。
 
 ## スクリプト
 
@@ -9,12 +11,12 @@ ZIGNOS の bootstrap・イメージ/ stage3 作成・起動テストのスクリ
 | `bootstrap.sh` | オーケストレータ(ソース取得 → lfs ユーザ → chroot → stage 実行) | build VM 上で root |
 | `stage0.sh` | LFS ch4/ch5/ch6: cross toolchain + 一時ツール | lfs ユーザ(bootstrap.sh が呼ぶ) |
 | `stage1.sh` | LFS ch7: chroot 準備・essential files・追加一時ツール + Go bootstrap スキャフォールド | chroot 内(bootstrap.sh が呼ぶ) |
-| `stage2.sh` | zpkg による最終システム構築(glibc → gcc → … → zpkg 自家ホスト)。bootstrap 中は `ZPKG_SANDBOX=off` | chroot 内(bootstrap.sh が呼ぶ) |
+| `stage2.sh` | zpkg による最終システム構築(glibc → gcc → … → zpkg 自家ホスト)。`CHANNEL` のレシピを使い、bootstrap 中は `ZPKG_SANDBOX=off` | chroot 内(bootstrap.sh が呼ぶ) |
 | `base.list` | ベースシステムの唯一の定義(**トップレベル 37 個**。依存込みで 60) | - |
-| `build-system.sh` | base.list をルートへ冪等適用(ローリング更新の主力) | ホスト or chroot |
-| `make-image.sh` | 起動可能イメージ(BIOS/MBR、`UEFI=1` で GPT+ESP) | build VM 上で root |
+| `build-system.sh` | base.list をルートへ冪等適用(ローリング更新の主力)。`CHANNEL` 対応 | ホスト or chroot |
+| `make-image.sh` | 起動可能イメージ(BIOS/MBR、`UEFI=1` で GPT+ESP)。選択チャンネルだけ同梱 | build VM 上で root |
 | `make-seed.sh` | 実行中システムのフル seed tarball(開発者向け) | root |
-| `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 54 パッケージ)。chroot して `zpkg install linux grub` で完成 | root |
+| `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 54 パッケージ)。選択チャンネルだけ同梱し、`/etc/zpkg/make.conf` に CHANNEL を書く | root |
 | `zignos-install.sh` | 実行中システムを別ディスクへインストール(BIOS/UEFI 自動判定、efibootmgr があれば NVRAM 登録) | 実行中 ZIGNOS 内で root |
 | `zignos-enter.sh` | private mount namespace で展開先に vfs をマウントして chroot(seed/stage3 用)。bwrap の pivot_root が動く | root |
 | `qemu-test.sh` | QEMU 起動チェック(`check`。`UEFI=1` で OVMF) | build VM 上 |
@@ -25,7 +27,11 @@ ZIGNOS の bootstrap・イメージ/ stage3 作成・起動テストのスクリ
 
 1. ルートを `$ZIGNOS_ROOT`(既定 `/mnt`)にマウント(VM では `/var/zignos.img` を loop)
 2. 4 リポジトリを `~/zignos` 下に clone、Go を導入(zignos/docs/env.md)
-3. `sudo ./bootstrap.sh`
+3. `sudo ./bootstrap.sh`(チャンネルを変えるなら `sudo CHANNEL=testing ./bootstrap.sh`)
+
+`CHANNEL` は `stable`(既定)/ `testing` / `unstable`。レシピの変更は
+`unstable → testing → stable` の順に昇格させる。stage3 / イメージには選択した
+チャンネルだけが入り、他のチャンネルは後から `zpkg sync` で追加する。
 
 - ソース一式は `$ZIGNOS_ROOT/sources` に自動ダウンロードされ、sha256 検証される。
   時計ずれ等で取得できない場合は `curl -k` したファイルを
@@ -45,8 +51,8 @@ cd ~/zignos/zignos-build && sudo ./build-system.sh /mnt
 sudo ./build-system.sh /mnt -p
 ```
 
-`base.list` は **Gentoo @system 相当のトップレベルだけ**(36 個)。依存と
-makedepends は zpkg が解決するので、実際のベースは閉包 59 パッケージになる。
+`base.list` は **Gentoo @system 相当のトップレベルだけ**(37 個)。依存と
+makedepends は zpkg が解決するので、実際のベースは閉包 60 パッケージになる。
 SSH / DHCP / エディタ / man / doas などは `zpkg install` で後から入れる。
 
 ## イメージと stage3
@@ -60,11 +66,16 @@ sudo UEFI=1 OUT=/var/tmp/zignos-uefi.img ./make-image.sh
 
 # stage3(カーネル抜きの chroot ベース、約 1GB)
 sudo OUT=/var/tmp/zignos-stage3.tar.xz ./make-stage3.sh
+
+# チャンネルを指定(既定 stable)
+sudo CHANNEL=testing OUT=/var/tmp/zignos-stage3-testing.tar.xz ./make-stage3.sh
 ```
 
 stage3 は base.list の**依存クロージャ**から linux/grub(と linux 専用の
 bison/bc/elfutils/kmod/initramfs)を除いた 54 パッケージ。展開後は
 `zignos-enter.sh <target>` で chroot し、`zpkg install linux grub` で仕上げる。
+同梱されるレシピは `/usr/share/zignos/recipes/<channel>/` の1チャンネルだけで、
+`/etc/zpkg/make.conf` の `CHANNEL=` がそのチャンネルを指す。
 
 ## qemu-test.sh
 

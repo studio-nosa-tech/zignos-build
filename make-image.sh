@@ -22,6 +22,7 @@ OUT="${OUT:-$(pwd)/zignos-rootfs.img}"
 SIZE="${SIZE:-12G}"
 FSLABEL="${FSLABEL:-zignos-root}"
 UEFI="${UEFI:-0}"
+CHANNEL="${CHANNEL:-stable}"
 PART_START=2048       # sectors, 1 MiB alignment
 ESP_SECTORS=204800    # 100 MiB EFI system partition (UEFI mode)
 ROOT_START=$((PART_START + ESP_SECTORS))
@@ -144,12 +145,18 @@ FSTAB
 	[ -f "$STAGE/etc/zignos-release" ] || die "staged copy has no /etc/zignos-release"
 	[ -e "$STAGE/usr/sbin/openrc-init" ] || die "openrc-init missing in the staged copy"
 
-	# Ship the recipe tree so zpkg works on the installed system without
-	# cloning anything: /usr/share/zignos/recipes/{core,main,desktop}.
-	if [ -d "$ZIGNOS_ROOT/sources/zignos-recipes" ]; then
-		mkdir -pv "$STAGE/usr/share/zignos"
-		cp -a "$ZIGNOS_ROOT/sources/zignos-recipes" "$STAGE/usr/share/zignos/recipes"
-		rm -rf "$STAGE/usr/share/zignos/recipes/.git"
+	# Ship the selected channel so zpkg works on the installed system
+	# without cloning anything. testing/unstable can be added with sync.
+	if [ -d "$ZIGNOS_ROOT/sources/zignos-recipes/$CHANNEL/core" ]; then
+		mkdir -pv "$STAGE/usr/share/zignos/recipes"
+		cp -a "$ZIGNOS_ROOT/sources/zignos-recipes/$CHANNEL" "$STAGE/usr/share/zignos/recipes/$CHANNEL"
+		rm -rf "$STAGE/usr/share/zignos/recipes/$CHANNEL/.git"
+		mkdir -p "$STAGE/etc/zpkg"
+		cat > "$STAGE/etc/zpkg/make.conf" <<EOF
+# zpkg build options
+# Release channel: stable, testing or unstable.
+CHANNEL=$CHANNEL
+EOF
 	fi
 
 	# Ship the real-disk installer so the guest can install itself.

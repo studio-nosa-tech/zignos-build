@@ -24,6 +24,7 @@ set -euo pipefail
 ZIGNOS_ROOT="${ZIGNOS_ROOT:-/mnt}"
 LFS_TGT="$(uname -m)-lfs-linux-gnu"
 JOBS="${JOBS:-$(nproc)}"
+CHANNEL="${CHANNEL:-stable}"
 ZIGNOS_DIR="${ZIGNOS_DIR:-$HOME/zignos}"
 ZIGNOS_RECIPES="${ZIGNOS_RECIPES:-$ZIGNOS_DIR/zignos-recipes}"
 ZIGNOS_ZPKG_SRC="${ZIGNOS_ZPKG_SRC:-$ZIGNOS_DIR/zpkg}"
@@ -89,7 +90,11 @@ preflight() {
 	for c in gcc g++ make gawk makeinfo bison perl python3 curl wget tar gzip xz bzip2 file patch diff go; do
 		command -v "$c" >/dev/null 2>&1 || die "missing host tool: $c"
 	done
-	[ -d "$ZIGNOS_RECIPES/core" ] || die "recipe tree not found: $ZIGNOS_RECIPES"
+	case "$CHANNEL" in
+		stable|testing|unstable) ;;
+		*) die "invalid CHANNEL=$CHANNEL (use stable, testing or unstable)" ;;
+	esac
+	[ -d "$ZIGNOS_RECIPES/$CHANNEL/core" ] || die "recipe tree not found: $ZIGNOS_RECIPES/$CHANNEL"
 	[ -f "$ZIGNOS_ZPKG_SRC/go.mod" ] || die "zpkg source not found: $ZIGNOS_ZPKG_SRC"
 	if [ -e /etc/bash.bashrc ]; then mv -v /etc/bash.bashrc /etc/bash.bashrc.NOUSE; fi
 	umask 022
@@ -170,6 +175,7 @@ chroot_run() {
 		PS1='(zignos) \u:\w\$ ' \
 		PATH=/usr/bin:/usr/sbin \
 		MAKEFLAGS="-j$JOBS" \
+		CHANNEL="$CHANNEL" ZPKG_CHANNEL="$CHANNEL" \
 		/bin/bash "/tmp/$1"
 }
 

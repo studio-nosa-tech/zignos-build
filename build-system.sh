@@ -28,22 +28,35 @@ die() { printf 'build-system: %s\n' "$*" >&2; exit 1; }
 NAMES=$(sed -e 's/#.*//' -e '/^[[:space:]]*$/d' "$LIST" | tr '\n' ' ')
 [ -n "$NAMES" ] || die "base.list has no packages"
 
+CHANNEL="${CHANNEL:-stable}"
+case "$CHANNEL" in
+	stable|testing|unstable) ;;
+	*) die "invalid CHANNEL=$CHANNEL (use stable, testing or unstable)" ;;
+esac
+
 # Recipe repos inside the root: bootstrap layout wins, then the shipped tree.
-if [ -d "$ROOT/sources/zignos-recipes" ]; then
-	REPOS="/sources/zignos-recipes/core:/sources/zignos-recipes/main:/sources/zignos-recipes/desktop"
+# A legacy flat tree is accepted only for stable.
+if [ -d "$ROOT/sources/zignos-recipes/$CHANNEL/core" ]; then
+	REPOS="/sources/zignos-recipes/$CHANNEL/core:/sources/zignos-recipes/$CHANNEL/main:/sources/zignos-recipes/$CHANNEL/desktop"
+elif [ -d "$ROOT/usr/share/zignos/recipes/$CHANNEL/core" ]; then
+	REPOS="/usr/share/zignos/recipes/$CHANNEL/core:/usr/share/zignos/recipes/$CHANNEL/main:/usr/share/zignos/recipes/$CHANNEL/desktop"
+elif [ -d "$ROOT/sources/zignos-recipes/core" ] || [ -d "$ROOT/usr/share/zignos/recipes/core" ]; then
+	[ "$CHANNEL" = stable ] || die "channel $CHANNEL is not installed under $ROOT (run zpkg sync)"
+	REPOS="" # legacy flat tree: let zpkg discover it
 else
-	REPOS="" # zpkg defaults to /usr/share/zignos/recipes inside the root
+	REPOS=""
+fi
+
+ENVARGS=(ZPKG_CHANNEL="$CHANNEL")
+if [ -n "$REPOS" ]; then
+	ENVARGS+=(ZPKG_REPOS="$REPOS")
 fi
 
 if [ "$ROOT" = "/" ]; then
 	# Live system: no chroot juggling. $NAMES is intentionally unquoted:
 	# base.list expands to one argument per package.
-	if [ -n "$REPOS" ]; then
-		# shellcheck disable=SC2086
-		exec env ZPKG_REPOS="$REPOS" zpkg install "$@" $NAMES
-	fi
 	# shellcheck disable=SC2086
-	exec zpkg install "$@" $NAMES
+	exec env "${ENVARGS[@]}" zpkg install "$@" $NAMES
 fi
 
 [ "$(id -u)" = 0 ] || die "run as root (it chroots into $ROOT)"
@@ -53,9 +66,5 @@ ENTER="$DIR/zignos-enter.sh"
 [ -x "$ENTER" ] || die "zignos-enter.sh not found next to this script"
 
 # $NAMES is intentionally unquoted: one argument per base.list package.
-if [ -n "$REPOS" ]; then
-	# shellcheck disable=SC2086
-	exec "$ENTER" "$ROOT" /usr/bin/env ZPKG_REPOS="$REPOS" /usr/bin/zpkg install "$@" $NAMES
-fi
 # shellcheck disable=SC2086
-exec "$ENTER" "$ROOT" /usr/bin/zpkg install "$@" $NAMES
+exec "$ENTER" "$ROOT" /usr/bin/env "${ENVARGS[@]}" /usr/bin/zpkg install "$@" $NAMES
