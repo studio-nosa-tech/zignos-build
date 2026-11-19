@@ -298,9 +298,9 @@ def generate(args: argparse.Namespace) -> dict:
         else:
             sources[name] = {"commit": "", "dirty": False}
     for name, commit in parse_pairs(args.commit, "--commit").items():
-        sources.setdefault(name, {"commit": "", "dirty": False})
-        sources[name]["commit"] = commit
-        sources[name].setdefault("dirty", False)
+        # An explicit commit identifies the source used for this build even
+        # when the build tree is an overlay or has local artifacts.
+        sources[name] = {"commit": commit, "dirty": False}
 
     top = base_top_level(Path(args.base_list)) if args.base_list else None
     data = {

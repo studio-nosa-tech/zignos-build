@@ -103,6 +103,7 @@ class ReleaseManifestTest(unittest.TestCase):
         self.assertEqual(data["recipes"]["per_channel"], 4)
         self.assertEqual(data["boot"]["bios"], "not-tested")
         self.assertEqual(data["source"]["zignos"]["commit"], "abc")
+        self.assertFalse(data["source"]["zignos"]["dirty"])
         self.assertEqual(data["artifacts"][0]["name"], "stage3")
         self.assertEqual({a["name"] for a in data["artifacts"]}, {"stage3", "recipes"})
         res = run("validate", str(out))
