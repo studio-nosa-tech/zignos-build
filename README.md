@@ -63,7 +63,7 @@ sudo OUT=/var/tmp/zignos-stage3.tar.xz ./make-stage3.sh
 ```
 
 stage3 は base.list の**依存クロージャ**から linux/grub(と linux 専用の
-bison/bc/elfutils/kmod/initramfs)を除いた 53 パッケージ。展開後は
+bison/bc/elfutils/kmod/initramfs)を除いた 54 パッケージ。展開後は
 `zignos-enter.sh <target>` で chroot し、`zpkg install linux grub` で仕上げる。
 
 ## qemu-test.sh
