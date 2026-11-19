@@ -12,14 +12,17 @@ ZIGNOS の bootstrap・イメージ/ stage3 作成・起動テストのスクリ
 | `stage0.sh` | LFS ch4/ch5/ch6: cross toolchain + 一時ツール | lfs ユーザ(bootstrap.sh が呼ぶ) |
 | `stage1.sh` | LFS ch7: chroot 準備・essential files・追加一時ツール + Go bootstrap スキャフォールド | chroot 内(bootstrap.sh が呼ぶ) |
 | `stage2.sh` | zpkg による最終システム構築(glibc → gcc → … → zpkg 自家ホスト)。`CHANNEL` のレシピを使い、bootstrap 中は `ZPKG_SANDBOX=off` | chroot 内(bootstrap.sh が呼ぶ) |
-| `base.list` | ベースシステムの唯一の定義(**トップレベル 37 個**。依存込みで 60) | - |
+| `base.list` | ベースシステムの唯一の定義(**トップレベル 37 個**。依存込みで 64) | - |
 | `build-system.sh` | base.list をルートへ冪等適用(ローリング更新の主力)。`CHANNEL` 対応 | ホスト or chroot |
 | `make-image.sh` | 起動可能イメージ(BIOS/MBR、`UEFI=1` で GPT+ESP)。選択チャンネルだけ同梱 | build VM 上で root |
 | `make-seed.sh` | 実行中システムのフル seed tarball(開発者向け) | root |
 | `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 54 パッケージ)。選択チャンネルだけ同梱し、`/etc/zpkg/make.conf` に CHANNEL を書く | root |
 | `zignos-install.sh` | 実行中システムを別ディスクへインストール(BIOS/UEFI 自動判定、efibootmgr があれば NVRAM 登録) | 実行中 ZIGNOS 内で root |
 | `zignos-enter.sh` | private mount namespace で展開先に vfs をマウントして chroot(seed/stage3 用)。bwrap の pivot_root が動く | root |
-| `qemu-test.sh` | QEMU 起動チェック(`check`。`UEFI=1` で OVMF) | build VM 上 |
+| `qemu-test.sh` | QEMU 起動チェック(`check`。`UEFI=1` で OVMF)。結果を manifest 用 JSON に記録 | build VM 上 |
+| `release.conf` | リリース名・stage3 revision・availability の既定値 | - |
+| `release-manifest.py` | `release.json` の生成(`generate`)・起動結果の記録(`record-boot`)・検証(`validate`) | python3 |
+| `publish-release.sh` | manifest を検証し、`zignos/releases/` とサイトへ配置 | python3 |
 
 参照手順: LFS 13.1-systemd(`stage0/1.sh` は書籍に忠実、`stage2.sh` は zpkg レシピに翻訳)。意図的な差分は `bootstrap.sh` のヘッダーコメントを参照。
 
@@ -52,7 +55,7 @@ sudo ./build-system.sh /mnt -p
 ```
 
 `base.list` は **Gentoo @system 相当のトップレベルだけ**(37 個)。依存と
-makedepends は zpkg が解決するので、実際のベースは閉包 60 パッケージになる。
+makedepends は zpkg が解決するので、実際のベースは閉包 64 パッケージになる。
 SSH / DHCP / エディタ / man / doas などは `zpkg install` で後から入れる。
 
 ## イメージと stage3
@@ -65,7 +68,7 @@ sudo OUT=/var/tmp/zignos-bios.img ./make-image.sh
 sudo UEFI=1 OUT=/var/tmp/zignos-uefi.img ./make-image.sh
 
 # stage3(カーネル抜きの chroot ベース、約 1GB)
-sudo OUT=/var/tmp/zignos-stage3.tar.xz ./make-stage3.sh
+sudo OUT=/var/tmp/zignos-stage3-20261119-r12-x86_64.tar.xz ./make-stage3.sh
 
 # チャンネルを指定(既定 stable)
 sudo CHANNEL=testing OUT=/var/tmp/zignos-stage3-testing.tar.xz ./make-stage3.sh
@@ -73,7 +76,8 @@ sudo CHANNEL=testing OUT=/var/tmp/zignos-stage3-testing.tar.xz ./make-stage3.sh
 
 stage3 は base.list の**依存クロージャ**から linux/grub(と linux 専用の
 bison/bc/elfutils/kmod/initramfs)を除いた 54 パッケージ。展開後は
-`zignos-enter.sh <target>` で chroot し、`zpkg install linux grub` で仕上げる。
+`zignos-enter.sh <target>` で chroot し、`zpkg install linux grub` で仕上げる。ビルド時には `<OUT>.release.json`
+(リリースマニフェスト)と、全チャンネルのレシピ tarball・zpkg バイナリも生成する。
 同梱されるレシピは `/usr/share/zignos/recipes/<channel>/` の1チャンネルだけで、
 `/etc/zpkg/make.conf` の `CHANNEL=` がそのチャンネルを指す。
 
@@ -85,5 +89,37 @@ UEFI=1 IMG=/var/tmp/zignos-uefi.img ./qemu-test.sh check   # UEFI (OVMF)
 ```
 
 シリアルに root / zignos でログインし、`ZIGNOS-BOOT-OK <kernel>` と `OpenRC` が
-出れば `BOOT CHECK PASSED`。TCG では稀に `IO-APIC + timer doesn't work!` で
+出れば `BOOT CHECK PASSED`。結果は `release-manifest.py record-boot` で
+`/var/tmp/zignos-boot-tests.json` に記録され、次の manifest 生成で取り込まれる。TCG では稀に `IO-APIC + timer doesn't work!` で
 止まることがあるので、失敗時は同じイメージで再試行する。
+
+## リリースビルド
+
+リリース名と stage3 revision は `release.conf` で決める(環境変数で上書き可能)。
+
+```bash
+# 1. stage3 と配布物・manifest を生成
+sudo ZIGNOS_ROOT=/mnt OUT=/var/tmp/zignos-stage3-20261119-r12-x86_64.tar.xz \
+  ./make-stage3.sh
+
+# 2. manifest を検証して zignos/releases とサイトへ配置
+./publish-release.sh /var/tmp/zignos-stage3-20261119-r12-x86_64.tar.xz.release.json
+
+# 3. サイトをビルド
+cd ~/ZIGNOS-Official && npm run build
+```
+
+`make-stage3.sh` は stage3 の DB からパッケージ一覧を読み、`zpkg` / `linux` /
+`grub` の版、base closure、レシピ数、ソースコミット、起動結果、配布物の
+SHA-256 を `release.json` にまとめる。ステージ3の SHA-256 は tarball に
+埋め込めないため、manifest は sidecar(`<OUT>.release.json`)になる。
+
+起動検証を manifest に反映する場合:
+
+```bash
+IMG=/var/tmp/zignos-bios.img ./qemu-test.sh check
+sudo OUT=/var/tmp/zignos-stage3-20261119-r12-x86_64.tar.xz ./make-stage3.sh
+```
+
+`qemu-test.sh` は `/var/tmp/zignos-boot-tests.json` に BIOS / UEFI の結果を
+書く。結果ファイルが無い場合、manifest の `boot` は全項目 `not-tested` になる。

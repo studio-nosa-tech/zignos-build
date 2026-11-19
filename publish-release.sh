@@ -15,11 +15,12 @@ set -euo pipefail
 
 MANIFEST="${1:?usage: publish-release.sh <release.json>}"
 DIR=$(cd "$(dirname "$0")" && pwd)
+PYTHON="${PYTHON:-python3}"
 
 [ -f "$MANIFEST" ] || { echo "publish-release: not found: $MANIFEST" >&2; exit 1; }
-python3 "$DIR/release-manifest.py" validate "$MANIFEST"
+"$PYTHON" "$DIR/release-manifest.py" validate "$MANIFEST"
 
-RELEASE=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"])' "$MANIFEST")
+RELEASE=$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["release"])' "$MANIFEST")
 [ -n "$RELEASE" ] || { echo "publish-release: empty release name" >&2; exit 1; }
 
 find_dir() {
