@@ -92,7 +92,7 @@ main() {
 	log "copying $ZIGNOS_ROOT to $WORK"
 	tar -C "$ZIGNOS_ROOT" \
 		--exclude='./sources' \
-		--exclude='./var/cache/zpkg' \
+		--exclude='./var/cache/zpkg*' \
 		--exclude='./opt' \
 		--exclude='./desktop-root' \
 		--exclude='./dev/*' \
