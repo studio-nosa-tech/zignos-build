@@ -93,15 +93,19 @@ main() {
 			echo "make-image: note: $ZIGNOS_ROOT/$v is mounted; it is excluded from the copy"
 		fi
 	done
+	# Anchor these to the root of the copied tree. An unanchored
+	# --exclude=sys would also drop /usr/include/sys (glibc headers) and
+	# make the installed image unable to compile anything.
 	tar -C "$ZIGNOS_ROOT" \
-		--exclude='sources' \
-		--exclude='var/cache/zpkg' \
-		--exclude='opt' \
-		--exclude='tmp' \
-		--exclude='proc' \
-		--exclude='sys' \
-		--exclude='dev' \
-		--exclude='run' \
+		--exclude='./sources' \
+		--exclude='./var/cache/zpkg' \
+		--exclude='./var/tmp/*' \
+		--exclude='./opt' \
+		--exclude='./tmp' \
+		--exclude='./proc' \
+		--exclude='./sys' \
+		--exclude='./dev' \
+		--exclude='./run' \
 		-cf - . | tar -C "$STAGE" -xf -
 
 	log "fixing layout and runtime mount points"
@@ -126,6 +130,15 @@ main() {
 		rm -rf "${STAGE:?}/lib64"
 	fi
 	ln -sfn lib "$STAGE/lib64"
+	# Meson (1.12) and CMake pick lib64 when /usr/lib64 is a real directory,
+	# while this tree keeps 64-bit libraries in /usr/lib and pkg-config only
+	# searches /usr/lib/pkgconfig. Merge any stray /usr/lib64 and leave a
+	# symlink so builds default to lib.
+	if [ -d "$STAGE/usr/lib64" ] && [ ! -L "$STAGE/usr/lib64" ]; then
+		cp -an "$STAGE/usr/lib64/." "$STAGE/usr/lib/"
+		rm -rf "${STAGE:?}/usr/lib64"
+	fi
+	ln -sfn lib "$STAGE/usr/lib64"
 	rm -f "$STAGE/sbin/sbin" "$STAGE/usr/sbin/sbin"
 	# PID 1 must be reachable; rebuild the chain regardless of source state.
 	ln -sfn /usr/sbin/openrc-init "$STAGE/sbin/init"

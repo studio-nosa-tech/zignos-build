@@ -94,6 +94,7 @@ main() {
 		--exclude='./sources' \
 		--exclude='./var/cache/zpkg' \
 		--exclude='./opt' \
+		--exclude='./desktop-root' \
 		--exclude='./dev/*' \
 		--exclude='./proc/*' \
 		--exclude='./sys/*' \
@@ -149,7 +150,7 @@ EOF
 	# elfutils, initramfs, efibootmgr, ...) are "extras" from the stage3
 	# point of view, and zpkg refuses to remove a package that a still-
 	# installed package depends on.
-	chroot "$WORK" /usr/bin/zpkg remove linux grub
+	chroot "$WORK" /usr/bin/env ZPKG_FORCE=1 /usr/bin/zpkg remove linux grub
 
 	local installed extra p
 	installed=$(chroot "$WORK" /usr/bin/zpkg list | awk '{print $1}')
@@ -163,7 +164,7 @@ EOF
 	if [ -n "${extra// /}" ]; then
 		log "extras:$extra"
 		# shellcheck disable=SC2086
-		chroot "$WORK" /usr/bin/zpkg remove $extra
+		chroot "$WORK" /usr/bin/env ZPKG_FORCE=1 /usr/bin/zpkg remove $extra
 	fi
 
 	# make-image runs grub-mkimage inside the bootstrap tree, so an unowned
@@ -190,6 +191,15 @@ EOF
 		rm -rf "${WORK:?}/lib64"
 	fi
 	ln -sfn lib "$WORK/lib64"
+	# Meson (1.12) and CMake pick lib64 when /usr/lib64 is a real directory,
+	# while this tree keeps 64-bit libraries in /usr/lib and pkg-config only
+	# searches /usr/lib/pkgconfig. Merge any stray /usr/lib64 and leave a
+	# symlink so builds default to lib.
+	if [ -d "$WORK/usr/lib64" ] && [ ! -L "$WORK/usr/lib64" ]; then
+		cp -an "$WORK/usr/lib64/." "$WORK/usr/lib/"
+		rm -rf "${WORK:?}/usr/lib64"
+	fi
+	ln -sfn lib "$WORK/usr/lib64"
 
 	log "cleaning the stage3 root"
 	rm -rf "$WORK/var/cache/zpkg" "$WORK/sources" "$WORK/opt"
@@ -205,12 +215,26 @@ EOF
 	chmod 1777 "$WORK/tmp" "$WORK/var/tmp"
 
 	# The tarball is public-ish: lock root (set a password in the chroot)
-	# and ship placeholder fstab/resolv.conf to fill in.
+	# and ship placeholder fstab/resolv.conf to fill in. unix_chkpwd needs
+	# the shadow group, and /etc/shadow must stay unreadable to others.
 	sed -i 's/^root:[^:]*:/root:!:/' "$WORK/etc/shadow"
+	chown root:42 "$WORK/etc/shadow" 2>/dev/null || true
+	chmod 640 "$WORK/etc/shadow"
+	if [ -e "$WORK/etc/gshadow" ]; then
+		chown root:42 "$WORK/etc/gshadow" 2>/dev/null || true
+		chmod 640 "$WORK/etc/gshadow"
+	fi
+	chown root:42 "$WORK/usr/sbin/unix_chkpwd" 2>/dev/null || true
+	chmod 2711 "$WORK/usr/sbin/unix_chkpwd" 2>/dev/null || true
 	cat > "$WORK/etc/fstab" <<'FSTAB'
 # ZIGNOS stage3 — set the root filesystem device before booting.
-# Use the filesystem UUID shown by blkid (the initramfs resolves root=UUID).
-#UUID=00000000-0000-0000-0000-000000000000 / ext4 defaults 0 0
+# Generate this file from the rescue environment instead of editing it:
+#   /mnt/zignos/usr/sbin/zignos-fstab /mnt/zignos
+#
+# WARNING: an active root line with a wrong UUID or device leaves / mounted
+# read-only (OpenRC's root service cannot remount it). Check the real device
+# with: findmnt -no SOURCE /
+# If writing the line by hand: UUID=<blkid -s UUID -o value DEVICE> / <fstype> defaults 0 0
 proc  /proc proc  defaults 0 0
 sysfs /sys  sysfs defaults 0 0
 FSTAB
