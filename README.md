@@ -12,11 +12,11 @@ ZIGNOS の bootstrap・イメージ/ stage3 作成・起動テストのスクリ
 | `stage0.sh` | LFS ch4/ch5/ch6: cross toolchain + 一時ツール | lfs ユーザ(bootstrap.sh が呼ぶ) |
 | `stage1.sh` | LFS ch7: chroot 準備・essential files・追加一時ツール + Go bootstrap スキャフォールド | chroot 内(bootstrap.sh が呼ぶ) |
 | `stage2.sh` | zpkg による最終システム構築(glibc → gcc → … → zpkg 自家ホスト)。`CHANNEL` のレシピを使い、bootstrap 中は `ZPKG_SANDBOX=off` | chroot 内(bootstrap.sh が呼ぶ) |
-| `base.list` | ベースシステムの唯一の定義(**トップレベル 37 個**。依存込みで 64) | - |
+| `base.list` | ベースシステムの唯一の定義(**トップレベル 38 個**。依存込みで 67) | - |
 | `build-system.sh` | base.list をルートへ冪等適用(ローリング更新の主力)。`CHANNEL` 対応 | ホスト or chroot |
 | `make-image.sh` | 起動可能イメージ(BIOS/MBR、`UEFI=1` で GPT+ESP)。選択チャンネルだけ同梱 | build VM 上で root |
 | `make-seed.sh` | 実行中システムのフル seed tarball(開発者向け) | root |
-| `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 54 パッケージ)。選択チャンネルだけ同梱し、`/etc/zpkg/make.conf` に CHANNEL を書く | root |
+| `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 67 パッケージ)。選択チャンネルだけ同梱し、`/etc/zpkg/make.conf` に CHANNEL を書く。`/etc/zpkg/sync.conf` は既定の GitHub レシピリポジトリを指す | root |
 | `zignos-install.sh` | 実行中システムを別ディスクへインストール(BIOS/UEFI 自動判定、efibootmgr があれば NVRAM 登録) | 実行中 ZIGNOS 内で root |
 | `zignos-enter.sh` | private mount namespace で展開先に vfs をマウントして chroot(seed/stage3 用)。bwrap の pivot_root が動く | root |
 | `qemu-test.sh` | QEMU 起動チェック(`check`。`UEFI=1` で OVMF)。結果を manifest 用 JSON に記録 | build VM 上 |
@@ -54,8 +54,8 @@ cd ~/zignos/zignos-build && sudo ./build-system.sh /mnt
 sudo ./build-system.sh /mnt -p
 ```
 
-`base.list` は **Gentoo @system 相当のトップレベルだけ**(37 個)。依存と
-makedepends は zpkg が解決するので、実際のベースは閉包 64 パッケージになる。
+`base.list` は **Gentoo @system 相当のトップレベルだけ**(38 個)。依存と
+makedepends は zpkg が解決するので、実際のベースは閉包 67 パッケージになる。
 SSH / DHCP / エディタ / man / doas などは `zpkg install` で後から入れる。
 
 ## イメージと stage3
@@ -80,6 +80,8 @@ bison/bc/elfutils/kmod/initramfs)を除いた 54 パッケージ。展開後は
 (リリースマニフェスト)と、全チャンネルのレシピ tarball・zpkg バイナリも生成する。
 同梱されるレシピは `/usr/share/zignos/recipes/<channel>/` の1チャンネルだけで、
 `/etc/zpkg/make.conf` の `CHANNEL=` がそのチャンネルを指す。
+`/etc/zpkg/sync.conf` は `zpkg sync` の既定取得元で、GitHub の
+`studio-nosa-tech/zignos-recipes` を git モードで参照する。
 
 ## qemu-test.sh
 

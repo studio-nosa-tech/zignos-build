@@ -61,6 +61,8 @@ grub
 # package manager and TLS trust for source downloads
 zpkg
 ca-certificates
+# git: recipe tree sync (zpkg sync compares the local commit with the remote)
+git
 # build sandbox used by zpkg to isolate recipe build scripts
 bubblewrap
 
@@ -76,7 +78,7 @@ dosfstools
 #       (go is already here indirectly: zpkg depends on it).
 #   vim nano less man-db man-pages
 #       editors and documentation.
-#   git curl wget rsync tmux htop which
+#   wget rsync tmux htop which
 #       everyday tools (main/).
 #   doas sudo
 #       privilege escalation (su is available from util-linux/shadow).
