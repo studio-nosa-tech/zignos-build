@@ -53,6 +53,8 @@ e2fsprogs
 kbd
 # time zone data (zic/zoneinfo); /etc/localtime defaults to UTC
 tzdata
+# locale generator and defaults (en_US.UTF-8 / ja_JP.UTF-8)
+locales
 
 # kernel and bootloader (kmod and initramfs come in through linux)
 linux
