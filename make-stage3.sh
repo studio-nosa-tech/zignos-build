@@ -95,6 +95,14 @@ main() {
 		--exclude='./var/cache/zpkg*' \
 		--exclude='./opt' \
 		--exclude='./desktop-root' \
+		--exclude='./build-stable' \
+		--exclude='./build-testing' \
+		--exclude='./build-unstable' \
+		--exclude='./testroot' \
+		--exclude='./stable-root' \
+		--exclude='./tools' \
+		--exclude='./mnt' \
+		--exclude='./root/*' \
 		--exclude='./dev/*' \
 		--exclude='./proc/*' \
 		--exclude='./sys/*' \
