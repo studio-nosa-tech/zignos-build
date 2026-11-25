@@ -7,6 +7,7 @@ chardev on 127.0.0.1:5555. Fills in the TUI menus, waits for the
 with live_serial_test.py verify.
 """
 
+import os
 import re
 import socket
 import sys
@@ -20,6 +21,9 @@ class Serial:
         self.sock = socket.create_connection(("127.0.0.1", 5555), timeout=15)
         self.sock.settimeout(0.5)
         self.text = ""
+        self.log = None
+        if os.environ.get("SERIAL_LOG"):
+            self.log = open(os.environ["SERIAL_LOG"], "ab")
 
     def drain(self, seconds):
         end = time.time() + seconds
@@ -30,6 +34,9 @@ class Serial:
                 continue
             if not chunk:
                 break
+            if self.log:
+                self.log.write(chunk)
+                self.log.flush()
             self.text += ANSI.sub(b"", chunk).decode("utf-8", "replace")
             if len(self.text) > 300000:
                 self.text = self.text[-150000:]
@@ -73,7 +80,7 @@ def main():
         ("Timezone:", "timezone", b"\r"),
         ("System language / locale", "locale", b"\r"),
         ("Console keymap", "keymap", b"\r"),
-        ("ALL DATA ON /dev/sda WILL BE DESTROYED", "summary", b"\r"),
+        ("WILL BE DESTROYED.", "summary", b"\r"),
     ]
     for needle, name, action in steps:
         if not s.wait(needle, 60):
@@ -94,6 +101,24 @@ def main():
             s.key(action)
 
     print("waiting for installation", file=sys.stderr)
+    if os.environ.get("TUI_GAUGE_ONLY"):
+        # Check that the progress gauge redraws while the engine runs, then
+        # leave the install running (the caller stops QEMU).
+        if not s.wait("Installing ZIGNOS on", 60):
+            print("gauge did not appear", file=sys.stderr)
+            s.drain(10)
+            return 1
+        frames = 0
+        last = ""
+        end = time.time() + 30
+        while time.time() < end:
+            s.drain(2)
+            seen = re.findall(r"\[\S\] (\d+)s elapsed\n([^\n]*)", s.text)
+            if seen:
+                frames = len(seen)
+                last = "%ss %s" % seen[-1]
+        print("gauge frames: %d, last: %s" % (frames, last), file=sys.stderr)
+        return 0 if frames >= 2 else 1
     if not s.wait("Installation complete.", 2400):
         print("TUI did not report completion", file=sys.stderr)
         s.drain(20)

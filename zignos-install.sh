@@ -167,6 +167,33 @@ SFDISK
 	fi
 
 	log "copying the running system"
+	# Progress files for the TUI gauge: the target mount point and an
+	# estimate of the number of bytes to copy. The estimate uses the same
+	# exclusions as the tar below (du takes paths, tar takes ./paths).
+	printf '%s\n' "$mnt" > /run/zignos-install.mnt
+	local -a du_excludes=(
+		--exclude=/proc
+		--exclude=/sys
+		--exclude=/dev
+		--exclude=/run
+		--exclude=/tmp
+		--exclude=/var/cache/zpkg
+		--exclude=/var/lib/seedrng
+		--exclude=/sources
+	)
+	if [ "$LIVE" = 1 ]; then
+		du_excludes+=(
+			--exclude=/home/live
+			--exclude=/root/.ssh
+			--exclude=/etc/sddm.conf.d/20-live-autologin.conf
+			--exclude=/var/lib/NetworkManager
+			--exclude=/var/lib/sddm
+			--exclude=/var/log
+		)
+	fi
+	local total
+	total=$(du -sb "${du_excludes[@]}" / 2>/dev/null | tail -n1 | awk '{print $1}')
+	printf '%s\n' "${total:-0}" > /run/zignos-install.total
 	# Same copy profile as make-image.sh: keep the system, drop runtime
 	# mounts' contents, caches and seed state (recreated below). A Live ISO
 	# additionally drops its session state so the target gets a clean
@@ -191,7 +218,9 @@ SFDISK
 			--exclude='./var/log/*'
 		)
 	fi
-	tar -C / "${excludes[@]}" -cf - . | tar -C "$mnt" -xf -
+	# -v on the extraction side gives the TUI a moving "last file" line;
+	# the first tar's stdout is the archive itself.
+	tar -C / "${excludes[@]}" -cf - . | tar -C "$mnt" -xvf -
 
 	log "fixing the usr-merge layout and mount points"
 	mkdir -pv "$mnt"/usr/{bin,lib,sbin} "$mnt"/{dev,proc,sys,run,tmp} "$mnt/var/tmp" "$mnt/var/lib/seedrng"
@@ -522,6 +551,7 @@ GRUBCFG
 	umount "$mnt"
 	rmdir "$mnt" 2>/dev/null || true
 
+	rm -f /run/zignos-install.mnt /run/zignos-install.total
 	log "done — ZIGNOS-INSTALL-COMPLETE"
 	echo "Boot from $DISK and log in as $user."
 	if [ "$LIVE" = 1 ]; then

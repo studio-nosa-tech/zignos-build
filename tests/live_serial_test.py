@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Drive the QEMU serial console for the ZIGNOS install test.
+"""Drive the QEMU serial console for the ZIGNOS install tests.
 
 Usage:
-  serial_test.py install [serial_port]
-  serial_test.py verify  [serial_port]
+  live_serial_test.py install [serial_port]
+  live_serial_test.py verify  [serial_port]
+  live_serial_test.py live    [serial_port]
 
 The script keeps raw output on stdout (so it can be tee'd) and matches on
 ANSI-stripped text.
@@ -70,6 +71,8 @@ class Serial:
 
 def install(ser):
     print("\n=== waiting for the live root shell ===", file=sys.stderr)
+    # Reconnecting after boot loses the earlier prompt; press Enter for a new one.
+    ser.sock.sendall(b"\r")
     if not ser.wait_for("root@zignos-live", 180):
         print("live root prompt not found", file=sys.stderr)
         return 1
@@ -140,14 +143,52 @@ def verify(ser):
     return 0
 
 
+def live(ser):
+    """Collect GPU/Plasma state from the running Live ISO."""
+    print("\n=== waiting for the Live root shell ===", file=sys.stderr)
+    # Reconnecting to the serial port after boot loses the earlier prompt, so
+    # press Enter to make the shell draw a fresh one.
+    ser.sock.sendall(b"\r")
+    if not ser.wait_for("root@zignos-live", 180):
+        print("live root shell not found", file=sys.stderr)
+        return 1
+    ser.send("echo LIVE-SHELL-OK")
+    if not ser.wait_for("LIVE-SHELL-OK", 30):
+        return 1
+    # SDDM/Plasma need a few seconds after the shell prompt appears.
+    wait = int(os.environ.get("ZIGNOS_LIVE_WAIT", "40"))
+    if wait:
+        ser.drain(wait)
+    commands = (
+        "echo ===MODULES===; "
+        "lsmod | grep -E 'vmwgfx|virtio_gpu|qxl|cirrus|bochs' || true; "
+        "echo ===DRI===; ls -l /dev/dri 2>&1; "
+        "echo ===DRI-DRIVERS===; ls /usr/lib/dri/ 2>&1; "
+        "echo ===DMESG===; dmesg | grep -iE 'vmwgfx|virtio_gpu|qxl|cirrus|bochs' | tail -8; "
+        "echo ===PLASMA===; ps -ef | grep -E 'sddm|kwin_wayland|plasmashell' | grep -v grep; "
+        "echo ===SDDM===; tail -15 /var/log/sddm.log 2>/dev/null; "
+        "echo ===GL===; command -v glxinfo >/dev/null && glxinfo -B 2>&1 | head -8 || echo no-glxinfo; "
+        "echo ===EGL===; command -v eglinfo >/dev/null && eglinfo 2>&1 | head -8 || echo no-eglinfo; "
+        "echo LIVE-GPU-DONE"
+    )
+    ser.send(commands)
+    if not ser.wait_for("LIVE-GPU-DONE", 120):
+        print("live GPU marker not found", file=sys.stderr)
+        return 1
+    ser.drain(3)
+    return 0
+
+
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in ("install", "verify"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("install", "verify", "live"):
         print(__doc__, file=sys.stderr)
         return 2
     ser = Serial(PORT)
     try:
         if sys.argv[1] == "install":
             return install(ser)
+        if sys.argv[1] == "live":
+            return live(ser)
         return verify(ser)
     finally:
         ser.sock.close()

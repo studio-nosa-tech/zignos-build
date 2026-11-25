@@ -70,13 +70,44 @@ run_engine() {
 	"$ENGINE" --yes "$DISK" </dev/null >>"$LOG" 2>&1 &
 	local pid=$!
 	ENGINE_PID=$pid
-	while kill -0 "$pid" 2>/dev/null; do
-		local last
-		last=$(tail -n1 "$LOG" 2>/dev/null | tr -d '\r' | cut -c1-72) || true
-		whiptail --title "$TITLE" --infobox \
-			"Installing ZIGNOS on $DISK...\n\n$last\n\nLog: $LOG" 12 76
-		sleep 2
-	done
+	local start
+	start=$(date +%s)
+	(
+		local spin='-\|/' i=0 mnt total used pct=0 last now elapsed
+		while kill -0 "$pid" 2>/dev/null; do
+			mnt=$(cat /run/zignos-install.mnt 2>/dev/null || true)
+			total=$(cat /run/zignos-install.total 2>/dev/null || true)
+			case "$total" in
+				''|*[!0-9]*) total=0 ;;
+			esac
+			if [ -n "$mnt" ] && [ "$total" -gt 0 ]; then
+				# Keep the last percentage if the target is already
+				# unmounted at the end of the install.
+				used=$(df -B1 --output=used "$mnt" 2>/dev/null |
+					tail -n1 | tr -dc '0-9') || true
+				case "$used" in
+					''|*[!0-9]*) used=0 ;;
+				esac
+				if [ "$used" -gt 0 ]; then
+					pct=$((used * 100 / total))
+					[ "$pct" -gt 99 ] && pct=99
+				fi
+			fi
+			now=$(date +%s)
+			elapsed=$((now - start))
+			last=$(tail -n1 "$LOG" 2>/dev/null |
+				tr -d '\r' | cut -c1-68) || true
+			i=$(((i + 1) % 4))
+			printf '%s\n' "$pct"
+			printf 'XXX\n'
+			printf 'Installing ZIGNOS on %s\n\n[%c] %ds elapsed\n%s\n\nLog: %s\n' \
+				"$DISK" "${spin:$i:1}" "$elapsed" "$last" "$LOG"
+			printf 'XXX\n'
+			sleep 1
+		done
+		printf '100\nXXX\nFinishing...\nXXX\n'
+	) | whiptail --title "$TITLE" --gauge \
+		"Installing ZIGNOS on $DISK..." 15 78 0
 	local rc=0
 	wait "$pid" || rc=$?
 	ENGINE_PID=""
