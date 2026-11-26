@@ -112,7 +112,7 @@ main() {
 		--exclude='./var/log/*' \
 		--exclude='./var/lib/seedrng/*' \
 		-cf - . | tar -C "$WORK" -xf -
-	mkdir -p "$WORK"/{dev,proc,sys,run,tmp,var/tmp,var/log,var/lib/seedrng}
+	mkdir -p "$WORK"/{dev,proc,sys,run,tmp,var/tmp,var/log,var/lib/seedrng,usr/lib/modprobe.d}
 
 	log "removing packages that are not part of stage3"
 	mount --bind /dev "$WORK/dev"
