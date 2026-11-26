@@ -1,0 +1,74 @@
+#!/bin/sh
+# ZIGNOS Live initramfs /init.
+#
+# Finds the ZIGNOSLIVE medium, mounts the squashfs root read-only and layers
+# a tmpfs overlay on top, then switches to the real init (OpenRC).
+
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || mount -t tmpfs tmpfs /dev
+mdev -s 2>/dev/null || true
+
+echo "ZIGNOS Live: loading squashfs/overlay modules"
+modprobe squashfs 2>/dev/null ||
+	insmod /lib/modules/7.3.5/kernel/fs/squashfs/squashfs.ko 2>/dev/null || true
+modprobe overlay 2>/dev/null ||
+	insmod /lib/modules/7.3.5/kernel/fs/overlayfs/overlay.ko 2>/dev/null || true
+
+iso=
+i=0
+while [ -z "$iso" ] && [ "$i" -lt 15 ]; do
+	for dev in /dev/sr0 /dev/sr1 /dev/sr2 /dev/sda /dev/sdb /dev/sdc \
+		/dev/vda /dev/vdb /dev/nvme0n1 /dev/nvme1n1; do
+		[ -b "$dev" ] || continue
+		if blkid "$dev" 2>/dev/null | grep -q 'LABEL="ZIGNOSLIVE"'; then
+			iso=$dev
+			break
+		fi
+	done
+	[ -n "$iso" ] && break
+	i=$((i + 1))
+	sleep 1
+done
+if [ -z "$iso" ]; then
+	echo "ZIGNOS Live: cannot find the ZIGNOSLIVE medium." >&2
+	exec /bin/sh
+fi
+echo "ZIGNOS Live: medium $iso"
+
+mkdir -p /run/iso /run/rootfs /run/overlay /newroot
+if ! mount -t iso9660 -o ro "$iso" /run/iso; then
+	echo "ZIGNOS Live: mounting the ISO failed." >&2
+	exec /bin/sh
+fi
+if ! mount -t squashfs -o ro,loop /run/iso/live/rootfs.squashfs /run/rootfs; then
+	echo "ZIGNOS Live: mounting the squashfs root failed." >&2
+	exec /bin/sh
+fi
+if ! mount -t tmpfs -o mode=0755 tmpfs /run/overlay; then
+	echo "ZIGNOS Live: mounting the overlay tmpfs failed." >&2
+	exec /bin/sh
+fi
+mkdir -p /run/overlay/upper /run/overlay/work
+if ! mount -t overlay \
+	-o lowerdir=/run/rootfs,upperdir=/run/overlay/upper,workdir=/run/overlay/work \
+	overlay /newroot; then
+	echo "ZIGNOS Live: mounting the overlay failed." >&2
+	exec /bin/sh
+fi
+
+# Keep the backing mounts alive under the new root; switch_root removes the
+# initramfs, and the overlay must not lose its lower/upper mounts.
+mkdir -p /newroot/run/iso /newroot/run/rootfs /newroot/run/overlay
+mount -o move /run/iso /newroot/run/iso
+mount -o move /run/rootfs /newroot/run/rootfs
+mount -o move /run/overlay /newroot/run/overlay
+
+mount -o move /proc /newroot/proc
+mount -o move /sys /newroot/sys
+mount -o move /dev /newroot/dev
+
+echo "ZIGNOS Live: switching root"
+exec switch_root /newroot /sbin/init

@@ -19,6 +19,7 @@ ZIGNOS の bootstrap・イメージ/ stage3 作成・起動テストのスクリ
 | `make-stage3.sh` | **stage3 tarball**(base.list の依存クロージャ − linux/grub = 67 パッケージ)。選択チャンネルだけ同梱し、`/etc/zpkg/make.conf` に CHANNEL を書く。`/etc/zpkg/sync.conf` は既定の GitHub レシピリポジトリを指す | root |
 | `zignos-install.sh` | 実行中システムを別ディスクへインストール(BIOS/UEFI 自動判定または `ZIGNOS_FIRMWARE` 指定、Live ISO からは live 専用設定を除去、efibootmgr があれば NVRAM 登録) | 実行中 ZIGNOS 内で root |
 | `zignos-installer.sh` | whiptail による TUI フロントエンド。ディスク・ファームウェア・ホスト名・ユーザー・ロケール・キーマップ・タイムゾーンを対話設定して `zignos-install --yes` を実行(`--auto` は環境変数で非対話)。インストール中は **進捗ゲージ**(コピー済み容量/推定総量のバーとパーセント)を表示。Live ISO の `/usr/sbin/zignos-installer` とアプリメニュー「Install ZIGNOS」 | Live ISO 内で root |
+| `live/` | デスクトップ Live ISO のビルド一式。stage/sanitize → squashfs/initramfs → BIOS/UEFI El Torito → ハイブリッド(USB)ISO。詳細は `live/README.md` | build VM 上で root |
 | `zignos-enter.sh` | private mount namespace で展開先に vfs をマウントして chroot(seed/stage3 用)。bwrap の pivot_root が動く | root |
 | `qemu-test.sh` | QEMU 起動チェック(`check`。`UEFI=1` で OVMF)。結果を manifest 用 JSON に記録 | build VM 上 |
 | `release.conf` | リリース名・stage3 revision・availability の既定値 | - |
@@ -83,6 +84,16 @@ bison/bc/elfutils/kmod/initramfs)を除いた 54 パッケージ。展開後は
 `/etc/zpkg/make.conf` の `CHANNEL=` がそのチャンネルを指す。
 `/etc/zpkg/sync.conf` は `zpkg sync` の既定取得元で、GitHub の
 `studio-nosa-tech/zignos-recipes` を git モードで参照する。
+
+## デスクトップ Live ISO
+
+`live/` に、実行中の testing デスクトップから Live ISO を作るスクリプト一式がある
+(`stage-desktop.sh` → `sanitize-desktop.sh` → `build-desktop-iso.sh` →
+`make-iso.py`)。USB 起動には MBR/GPT/ESP を付けたハイブリッド ISO が必要で、
+xorriso の `-isohybrid-mbr` + `-isohybrid-gpt-basdat` で作成する(手順・環境変数・
+QEMU での USB 検証は `live/README.md`)。同梱の `zignos-install` /
+`zignos-installer` はリポジトリ直下の `zignos-install.sh` /
+`zignos-installer.sh` と同期させる。
 
 ## qemu-test.sh
 

@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Install ZIGNOS
+Name[ja]=ZIGNOS をインストール
+Comment=Install ZIGNOS on this computer
+Comment[ja]=このコンピューターに ZIGNOS をインストールします
+Exec=konsole -e doas /usr/sbin/zignos-installer
+Icon=drive-harddisk
+Terminal=false
+Categories=System;
+Keywords=install;setup;zignos;
