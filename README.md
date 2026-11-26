@@ -85,6 +85,11 @@ bison/bc/elfutils/kmod/initramfs)を除いた 54 パッケージ。展開後は
 `/etc/zpkg/sync.conf` は `zpkg sync` の既定取得元で、GitHub の
 `studio-nosa-tech/zignos-recipes` を git モードで参照する。
 
+stage3 をビルドする前に、ビルドルートの `/usr/share/zignos/recipes` を
+`zpkg sync` で最新化する。stage3 にはその時点のツリーがそのまま同梱される
+ため、古いツリーで作ると依存宣言の修正(r21 の `attr` / `lz4` / `sqlite`
+など)が反映されない。
+
 ## デスクトップ Live ISO
 
 `live/` に、実行中の testing デスクトップから Live ISO を作るスクリプト一式がある
